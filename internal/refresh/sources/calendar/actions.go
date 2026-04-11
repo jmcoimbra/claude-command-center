@@ -3,72 +3,15 @@ package calendar
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
-	"github.com/anutron/claude-command-center/internal/db"
-	"golang.org/x/oauth2"
 	gcal "google.golang.org/api/calendar/v3"
-	"google.golang.org/api/option"
 )
 
-func executePendingActions(ctx context.Context, ts oauth2.TokenSource, cc *db.CommandCenter) {
-	if len(cc.PendingActions) == 0 {
-		return
-	}
-
-	srv, err := gcal.NewService(ctx, option.WithTokenSource(ts))
-	if err != nil {
-		log.Printf("cannot execute pending actions: calendar service error: %v", err)
-		return
-	}
-
-	var remaining []db.PendingAction
-	for _, action := range cc.PendingActions {
-		if action.Type != "booking" {
-			remaining = append(remaining, action)
-			continue
-		}
-
-		title := "Blocked Time"
-		for _, todo := range cc.Todos {
-			if todo.ID == action.TodoID {
-				title = todo.Title
-				break
-			}
-		}
-
-		slot, err := findFreeSlot(ctx, srv, action.DurationMinutes)
-		if err != nil {
-			log.Printf("could not find free slot for %q: %v", title, err)
-			remaining = append(remaining, action)
-			continue
-		}
-
-		event := &gcal.Event{
-			Summary: title,
-			Start: &gcal.EventDateTime{
-				DateTime: slot.Format(time.RFC3339),
-			},
-			End: &gcal.EventDateTime{
-				DateTime: slot.Add(time.Duration(action.DurationMinutes) * time.Minute).Format(time.RFC3339),
-			},
-		}
-
-		_, err = srv.Events.Insert("primary", event).Context(ctx).Do()
-		if err != nil {
-			log.Printf("failed to create event for %q: %v", title, err)
-			remaining = append(remaining, action)
-			continue
-		}
-
-		log.Printf("booked %dm for %q at %s", action.DurationMinutes, title, slot.Format("15:04"))
-	}
-
-	cc.PendingActions = remaining
-}
-
-func findFreeSlot(ctx context.Context, srv *gcal.Service, durationMinutes int) (time.Time, error) {
+// FindFreeSlot searches the user's primary calendar for the next available time
+// slot of the given duration (in minutes). It looks from now until 6pm today,
+// or from 9am-6pm tomorrow if today is full.
+func FindFreeSlot(ctx context.Context, srv *gcal.Service, durationMinutes int) (time.Time, error) {
 	now := time.Now()
 	start := now.Truncate(15 * time.Minute).Add(15 * time.Minute)
 	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 18, 0, 0, 0, now.Location())

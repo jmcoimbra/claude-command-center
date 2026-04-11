@@ -42,14 +42,14 @@ func TestFindFreeSlot_MalformedTimes(t *testing.T) {
 		t.Fatalf("create calendar service: %v", err)
 	}
 
-	// findFreeSlot should return an error when it encounters events with
+	// FindFreeSlot should return an error when it encounters events with
 	// unparseable times, rather than silently treating them as year 0001.
 	//
 	// BUG: Lines 100 and 106 use `eventStart, _ := time.Parse(...)` which
 	// discards the error. The malformed event silently gets zero-time boundaries,
 	// making it invisible to the slot-finding algorithm.
-	_, err = findFreeSlot(context.Background(), srv, 30)
+	_, err = FindFreeSlot(context.Background(), srv, 30)
 	if err == nil {
-		t.Error("findFreeSlot should return error for events with unparseable times, but silently succeeded")
+		t.Error("FindFreeSlot should return error for events with unparseable times, but silently succeeded")
 	}
 }

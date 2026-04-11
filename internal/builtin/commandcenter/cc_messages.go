@@ -90,6 +90,18 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case dbWriteResult:
 		return p.handleDBWriteResult(msg)
 
+	case bookingCompleteMsg:
+		return p.handleBookingComplete(msg)
+
+	case bookingErrorMsg:
+		return p.handleBookingError(msg)
+
+	case releaseCompleteMsg:
+		return p.handleReleaseComplete(msg)
+
+	case releaseErrorMsg:
+		return p.handleReleaseError(msg)
+
 	case claudeEditFinishedMsg:
 		return p.handleClaudeEditFinished(msg)
 
@@ -323,6 +335,40 @@ func (p *Plugin) handleDBWriteResult(msg dbWriteResult) (bool, plugin.Action) {
 			return true, plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.loadCCFromDBCmd()}
 		}
 	}
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleBookingComplete(msg bookingCompleteMsg) (bool, plugin.Action) {
+	p.flashMessage = fmt.Sprintf("Booked %dm at %s", msg.duration, msg.startTime.Format("3:04pm"))
+	p.flashMessageAt = time.Now()
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleBookingError(msg bookingErrorMsg) (bool, plugin.Action) {
+	p.flashMessage = "Booking failed: " + msg.err.Error()
+	if len(p.flashMessage) > 80 {
+		p.flashMessage = p.flashMessage[:77] + "..."
+	}
+	p.flashMessageAt = time.Now()
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleReleaseComplete(msg releaseCompleteMsg) (bool, plugin.Action) {
+	if msg.count == 0 {
+		p.flashMessage = "No future bookings to release"
+	} else {
+		p.flashMessage = fmt.Sprintf("Released %d booking(s)", msg.count)
+	}
+	p.flashMessageAt = time.Now()
+	return true, plugin.NoopAction()
+}
+
+func (p *Plugin) handleReleaseError(msg releaseErrorMsg) (bool, plugin.Action) {
+	p.flashMessage = "Release failed: " + msg.err.Error()
+	if len(p.flashMessage) > 80 {
+		p.flashMessage = p.flashMessage[:77] + "..."
+	}
+	p.flashMessageAt = time.Now()
 	return true, plugin.NoopAction()
 }
 

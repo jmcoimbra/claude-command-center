@@ -840,25 +840,12 @@ func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
 	case "enter":
 		activeTodos := p.cc.ActiveTodos()
 		if p.ccCursor < len(activeTodos) {
-			todoID := activeTodos[p.ccCursor].ID
+			todo := activeTodos[p.ccCursor]
 			dur := bookingDurations[p.bookingCursor]
-			p.cc.AddPendingBooking(todoID, dur)
-			action := db.PendingAction{
-				Type:            "booking",
-				TodoID:          todoID,
-				DurationMinutes: dur,
-				RequestedAt:     time.Now(),
-			}
-			dbCmd := p.dbWriteCmd(func(database *sql.DB) error { return db.DBInsertPendingAction(database, action) })
-			p.ccRefreshing = true
-			p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, activeTodos[p.ccCursor].Title)
+			p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, todo.Title)
 			p.flashMessageAt = time.Now()
 			p.bookingMode = false
-			cmds := []tea.Cmd{dbCmd}
-			if p.cfg.RefreshEnabled() {
-				cmds = append(cmds, refreshCCCmd())
-			}
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: scheduleBlockCmd(p, todo.ID, todo.Title, dur)}
 		}
 		p.bookingMode = false
 		return plugin.NoopAction()
