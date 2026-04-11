@@ -39,7 +39,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `ccCursor int` — selected todo index in command tab
 - `subView string` — active sub-view (currently only `"command"`)
 - `showHelp bool` — help overlay toggle
-- `showBacklog bool` — show/hide completed todos
+
 - `detailView bool` — viewing a single todo's detail with edit input
 - `detailNotice string` — transient notice banner in detail view (auto-clears after 1s)
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
@@ -81,7 +81,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `/` | normal | Search/filter todos (case insensitive) |
 | `enter` | search | Open the selected item from the filtered list directly (no intermediate freeze state) |
 | `esc` | search | Clear search query and exit search mode |
-| `b` | normal | Toggle backlog (completed items) |
+| `b` | normal | Jump to Backlog tab (expands view if collapsed) |
 | `f` | normal | Toggle focus on selected todo (focus = move to top; unfocus clears star+focus) |
 | `s` | normal | Toggle star on selected todo (star = starred+focused+accepted; opens schedule modal; unstar checks for calendar bookings) |
 | `S` | normal | Open schedule modal for selected todo (auto-stars if not already starred) |
@@ -274,17 +274,19 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 
 | Tab | Shows |
 |-----|-------|
-| focus | todos where `Focus == true` |
-| inbox | `new` |
-| agents | `enqueued`, `running`, `blocked` |
-| review | `review`, `failed` |
-| all | all non-terminal (everything except `completed`, `dismissed`) |
+| Focus | todos where `Focus == true` |
+| New | `new` status items (formerly "Inbox") |
+| Backlog | `completed`, `dismissed` items (terminal states) |
+| Agents | `enqueued`, `running`, `blocked` |
+| Review | `review`, `failed` |
+| All | all non-terminal (everything except `completed`, `dismissed`) |
 
-- **Tab order**: focus, inbox, agents, review, all (ToDo removed — the home dashboard serves that purpose)
-- **Default tab**: focus
+- **Tab order**: Focus, New, Backlog, Agents, Review, All
+- **Default tab**: Focus
 - Pressing `space` from collapsed view expands into the todo list and lands on the Focus tab
 - `tab` cycles filter forward, `shift+tab` cycles backward
 - Switching tabs resets cursor and scroll offset to 0
+- `b` key is a shortcut that expands the view (if collapsed) and jumps directly to the Backlog tab
 
 #### Normal View Behavior
 

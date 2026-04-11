@@ -56,7 +56,7 @@ func starPrefix(s *ccStyles, todo db.Todo) string {
 }
 
 // renderCommandCenterView is the main entry point for the command center tab.
-func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, showBacklog bool, refreshing bool, lastRefreshError string, filteredTodos []db.Todo, triageCounts map[string]int, maxConcurrent int) string {
+func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCenter, calendars []config.CalendarEntry, calendarEnabled bool, width, height, todoCursor, scrollOffset, frame int, loadingTodoID string, refreshing bool, lastRefreshError string, filteredTodos []db.Todo, triageCounts map[string]int, maxConcurrent int) string {
 	if cc == nil {
 		empty := lipgloss.NewStyle().
 			Foreground(s.ColorMuted).
@@ -83,11 +83,6 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		panelHeight = 10
 	}
 
-	var completed []db.Todo
-	if showBacklog {
-		completed = cc.CompletedTodos()
-	}
-
 	var columns string
 	// PanelBorder.Width() in lipgloss v1 sets the width including padding but
 	// excluding borders. Content rendered inside the panel must fit within
@@ -104,7 +99,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 			maxVisibleTodos = 5
 		}
 		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, contentWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent, showBacklog)
+		todoCol := renderTodoPanel(s, g, filteredTodos, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
 		calPanel := s.PanelBorder.Width(panelWidth).Render(calCol)
 		todoPanel := s.PanelBorder.Width(panelWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
@@ -119,7 +114,7 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent, showBacklog)
+		todoCol := renderTodoPanel(s, g, filteredTodos, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
 		columns = s.PanelBorder.Width(panelWidth).Render(todoContent)
@@ -445,15 +440,10 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 	return strings.Join(lines, "\n")
 }
 
-func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int, maxConcurrent int, showBacklog bool) string {
+func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int, maxConcurrent int) string {
 	var lines []string
 
-	var header string
-	if showBacklog {
-		header = s.SectionHeader.Render(fmt.Sprintf("BACKLOG (%d completed)", len(todos)))
-	} else {
-		header = s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
-	}
+	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
 	lines = append(lines, header)
 
 	// Agent status header line
@@ -465,11 +455,7 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 	lines = append(lines, "")
 
 	if len(todos) == 0 {
-		if showBacklog {
-			lines = append(lines, s.CalendarFree.Render("  No completed items."))
-		} else {
-			lines = append(lines, s.CalendarFree.Render("  No starred items. Press space to expand, f to focus, s to star."))
-		}
+		lines = append(lines, s.CalendarFree.Render("  No starred items. Press space to expand, f to focus, s to star."))
 	}
 
 	visStart := scrollOffset
@@ -546,14 +532,6 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  \u25bc %d more below", len(todos)-visEnd)))
 	}
 
-	if len(completed) > 0 && !showBacklog {
-		lines = append(lines, "")
-		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  COMPLETED (%d)", len(completed))))
-		for _, todo := range completed {
-			title := s.CalendarFree.Render("  \u2713 " + todo.Title)
-			lines = append(lines, title)
-		}
-	}
 
 	// Triage status bar
 	if triageCounts != nil {
@@ -890,7 +868,8 @@ func renderTabBar(s *ccStyles, activeFilter string, counts map[string]int, width
 	}
 	tabs := []tabDef{
 		{"focus", "Focus"},
-		{"inbox", "Inbox"},
+		{"new", "New"},
+		{"backlog", "Backlog"},
 		{"agents", "Agents"},
 		{"review", "Review"},
 		{"all", "All"},
@@ -923,7 +902,7 @@ func renderStatusBar(s *ccStyles, counts map[string]int, width int) string {
 		shortLabel string
 	}
 	items := []item{
-		{"inbox", "Inbox", "I"},
+		{"new", "New", "N"},
 		{"agents", "Agents", "A"},
 		{"review", "Review", "R"},
 	}

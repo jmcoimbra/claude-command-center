@@ -14,7 +14,7 @@ import (
 )
 
 // triageFilterOrder defines the tab order for triage filters in expanded view.
-var triageFilterOrder = []string{"focus", "inbox", "agents", "review", "all"}
+var triageFilterOrder = []string{"focus", "new", "backlog", "agents", "review", "all"}
 
 // HandleKey handles key input and returns an action.
 func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
@@ -564,9 +564,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "b":
-		p.showBacklog = !p.showBacklog
+		// Jump to Backlog tab (expand if collapsed)
+		if !p.ccExpanded {
+			p.ccExpanded = true
+			p.ccExpandedCols = 2
+		}
+		p.triageFilter = "backlog"
 		p.ccCursor = 0
-		p.ccScrollOffset = 0
+		p.ccExpandedOffset = 0
 		return plugin.NoopAction()
 
 	case "s":
