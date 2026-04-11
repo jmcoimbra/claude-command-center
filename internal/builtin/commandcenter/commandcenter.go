@@ -576,15 +576,21 @@ func (p *Plugin) filteredTodos() []db.Todo {
 
 	var result []db.Todo
 	if !p.ccExpanded {
-		// Normal view: all non-terminal todos except inbox ("new")
+		// Collapsed view: show only starred items.
 		for _, t := range allActive {
-			if t.Status != db.StatusNew {
+			if t.Starred {
 				result = append(result, t)
 			}
 		}
 	} else {
 		// Expanded view: filter based on triageFilter
 		switch p.triageFilter {
+		case "focus":
+			for _, t := range allActive {
+				if t.Focus {
+					result = append(result, t)
+				}
+			}
 		case "todo":
 			for _, t := range allActive {
 				if t.Status == db.StatusBacklog {
@@ -614,6 +620,9 @@ func (p *Plugin) filteredTodos() []db.Todo {
 		}
 	}
 
+	// Sort starred items to the top within any view.
+	sortStarredFirst(result)
+
 	// Apply search filter on top of triage filter
 	query := strings.TrimSpace(p.searchInput.Value())
 	if query == "" {
@@ -634,6 +643,7 @@ func (p *Plugin) filteredTodos() []db.Todo {
 // triageCounts returns the count of todos matching each filter category.
 func (p *Plugin) triageCounts() map[string]int {
 	counts := map[string]int{
+		"focus":  0,
 		"todo":   0,
 		"inbox":  0,
 		"agents": 0,
@@ -645,6 +655,9 @@ func (p *Plugin) triageCounts() map[string]int {
 	}
 	for _, t := range p.cc.ActiveTodos() {
 		counts["all"]++
+		if t.Focus {
+			counts["focus"]++
+		}
 		switch t.Status {
 		case db.StatusBacklog:
 			counts["todo"]++
@@ -657,6 +670,25 @@ func (p *Plugin) triageCounts() map[string]int {
 		}
 	}
 	return counts
+}
+
+// sortStarredFirst sorts todos in-place so starred items appear before non-starred items,
+// preserving relative order within each group.
+func sortStarredFirst(todos []db.Todo) {
+	if len(todos) == 0 {
+		return
+	}
+	// Stable partition: starred first, then non-starred.
+	starred := todos[:0:len(todos)]
+	var rest []db.Todo
+	for _, t := range todos {
+		if t.Starred {
+			starred = append(starred, t)
+		} else {
+			rest = append(rest, t)
+		}
+	}
+	copy(todos, append(starred, rest...))
 }
 
 func (p *Plugin) triggerFocusRefresh() tea.Cmd {

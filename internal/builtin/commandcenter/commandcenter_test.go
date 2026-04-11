@@ -54,9 +54,9 @@ func testPluginWithCC(t *testing.T) *Plugin {
 	p.cc = &db.CommandCenter{
 		GeneratedAt: time.Now(),
 		Todos: []db.Todo{
-			{ID: "t1", Title: "First todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-			{ID: "t2", Title: "Second todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-			{ID: "t3", Title: "Third todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t1", Title: "First todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+			{ID: "t2", Title: "Second todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+			{ID: "t3", Title: "Third todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
 		},
 	}
 	p.width = 120
@@ -164,6 +164,7 @@ func TestDownArrowAutoExpandsPastVisibleArea(t *testing.T) {
 	maxVisible := p.normalMaxVisibleTodos()
 
 	// Create maxVisible+2 todos so we can go past the visible limit.
+	// All starred so they appear in the collapsed view.
 	var todos []db.Todo
 	for i := 0; i < maxVisible+2; i++ {
 		todos = append(todos, db.Todo{
@@ -172,6 +173,7 @@ func TestDownArrowAutoExpandsPastVisibleArea(t *testing.T) {
 			Status:    db.StatusBacklog,
 			Source:    "manual",
 			CreatedAt: time.Now(),
+			Starred:   true,
 		})
 	}
 	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
@@ -1409,9 +1411,9 @@ func TestSearchFilterMatchesDisplayID(t *testing.T) {
 	p.cc = &db.CommandCenter{
 		GeneratedAt: time.Now(),
 		Todos: []db.Todo{
-			{ID: "t1", DisplayID: 183, Title: "Alpha task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-			{ID: "t2", DisplayID: 42, Title: "Beta task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
-			{ID: "t3", DisplayID: 1830, Title: "Gamma task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+			{ID: "t1", DisplayID: 183, Title: "Alpha task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+			{ID: "t2", DisplayID: 42, Title: "Beta task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+			{ID: "t3", DisplayID: 1830, Title: "Gamma task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
 		},
 	}
 	p.width = 120
@@ -1645,28 +1647,28 @@ func TestCanLaunchAgentWithDaemon(t *testing.T) {
 	}
 }
 
-func TestFilteredTodosNormalViewIncludesAgentStatuses(t *testing.T) {
+func TestFilteredTodosNormalViewShowsOnlyStarred(t *testing.T) {
 	p := testPluginWithCC(t)
-	// Add todos with various statuses
+	// Add todos with various statuses, some starred.
 	p.cc.Todos = []db.Todo{
-		{ID: "t1", Title: "Backlog", Status: db.StatusBacklog},
-		{ID: "t2", Title: "Running", Status: db.StatusRunning},
-		{ID: "t3", Title: "Enqueued", Status: db.StatusEnqueued},
-		{ID: "t4", Title: "Review", Status: db.StatusReview},
-		{ID: "t5", Title: "Blocked", Status: db.StatusBlocked},
-		{ID: "t6", Title: "Failed", Status: db.StatusFailed},
+		{ID: "t1", Title: "Starred Backlog", Status: db.StatusBacklog, Starred: true},
+		{ID: "t2", Title: "Starred Running", Status: db.StatusRunning, Starred: true},
+		{ID: "t3", Title: "Unstarred Enqueued", Status: db.StatusEnqueued},
+		{ID: "t4", Title: "Unstarred Review", Status: db.StatusReview},
+		{ID: "t5", Title: "Unstarred Blocked", Status: db.StatusBlocked},
+		{ID: "t6", Title: "Unstarred Failed", Status: db.StatusFailed},
 		{ID: "t7", Title: "Inbox", Status: db.StatusNew},
 	}
 
-	// Normal (non-expanded) view should include everything except "new"
+	// Collapsed (non-expanded) view should include only starred todos.
 	p.ccExpanded = false
 	filtered := p.filteredTodos()
-	if len(filtered) != 6 {
-		t.Fatalf("expected 6 non-new todos in normal view, got %d", len(filtered))
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 starred todos in collapsed view, got %d", len(filtered))
 	}
 	for _, todo := range filtered {
-		if todo.Status == db.StatusNew {
-			t.Error("normal view should not include 'new' status todos")
+		if !todo.Starred {
+			t.Errorf("collapsed view should only include starred todos, got non-starred todo %q", todo.Title)
 		}
 	}
 }
@@ -1820,6 +1822,7 @@ func TestBUG113_DownArrowAutoExpandsView(t *testing.T) {
 	maxVisible := p.normalMaxVisibleTodos()
 
 	// Create enough todos to overflow the visible area.
+	// All starred so they appear in the collapsed view and allow cursor navigation.
 	var todos []db.Todo
 	for i := 0; i < maxVisible+5; i++ {
 		todos = append(todos, db.Todo{
@@ -1828,6 +1831,7 @@ func TestBUG113_DownArrowAutoExpandsView(t *testing.T) {
 			Status:    db.StatusBacklog,
 			Source:    "manual",
 			CreatedAt: time.Now(),
+			Starred:   true,
 		})
 	}
 	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
@@ -2019,8 +2023,8 @@ func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 	p.width = 120
 	maxVisible := p.normalMaxVisibleTodos()
 
-	// Create todos with mixed statuses (backlog + enqueued) to exercise
-	// the filter difference between collapsed and expanded views.
+	// Create starred todos with mixed statuses (backlog + enqueued).
+	// All starred so they appear in the collapsed view and allow cursor navigation.
 	var todos []db.Todo
 	for i := 0; i < maxVisible+3; i++ {
 		status := db.StatusBacklog
@@ -2033,6 +2037,7 @@ func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 			Status:    status,
 			Source:    "manual",
 			CreatedAt: time.Now(),
+			Starred:   true,
 		})
 	}
 	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
@@ -2051,7 +2056,7 @@ func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 		t.Fatal("BUG-124 regression: expected auto-expand to trigger")
 	}
 
-	// After auto-expand, triageFilter must be "all" so the same items are visible.
+	// After auto-expand, triageFilter must be "all" so all items are visible.
 	if p.triageFilter != "all" {
 		t.Errorf("BUG-124 regression: expected triageFilter 'all' after auto-expand, got %q", p.triageFilter)
 	}
@@ -2066,7 +2071,7 @@ func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 		}
 	}
 	if !hasEnqueued {
-		t.Error("BUG-124 regression: expanded view after auto-expand should include enqueued todos (same as collapsed view)")
+		t.Error("BUG-124 regression: expanded view after auto-expand should include enqueued todos under 'all' filter")
 	}
 }
 
@@ -2078,6 +2083,7 @@ func TestBUG124_AutoExpandWithSuggestionBanner(t *testing.T) {
 	// Before adding suggestions, record maxVisible.
 	maxVisibleClean := p.normalMaxVisibleTodos()
 
+	// All starred so they appear in the collapsed view and allow cursor navigation.
 	var todos []db.Todo
 	for i := 0; i < maxVisibleClean+3; i++ {
 		todos = append(todos, db.Todo{
@@ -2086,6 +2092,7 @@ func TestBUG124_AutoExpandWithSuggestionBanner(t *testing.T) {
 			Status:    db.StatusBacklog,
 			Source:    "manual",
 			CreatedAt: time.Now(),
+			Starred:   true,
 		})
 	}
 	p.cc = &db.CommandCenter{

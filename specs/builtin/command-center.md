@@ -24,7 +24,6 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
 | `refresh.go` | Background refresh command (finds and spawns `ai-cron` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
-| `calendar.go` | Direct Google Calendar API operations: `findFreeSlot`, create event, delete event, OAuth token source from config |
 
 **Related refresh files** (in `internal/refresh/`):
 
@@ -43,11 +42,9 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `detailView bool` — viewing a single todo's detail with edit input
 - `detailNotice string` — transient notice banner in detail view (auto-clears after 1s)
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
-- `bookingMode bool` — calendar event booking flow (duration picker for `S` schedule block)
+- `bookingMode bool` — calendar event booking flow
 - `ccExpanded bool` — expanded multi-column todo view
 - `triageFilter string` — active triage filter tab in expanded view (default: "todo")
-- `starFlashTodoID string` — ID of todo currently showing the star scheduling offer flash
-- `starFlashTimer int` — countdown ticks until the star flash auto-dismisses (3s)
 - `addingTodoQuick bool` — quick textarea for LLM-enriched todo creation
 - `gPending bool` — chord state: `g` was pressed, awaiting second key
 - `mergeSourceCursor int` — selected source index in synthesis todo detail view
@@ -78,9 +75,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `enter` | search | Open the selected item from the filtered list directly (no intermediate freeze state) |
 | `esc` | search | Clear search query and exit search mode |
 | `b` | normal | Toggle backlog (completed items) |
-| `f` | normal | Toggle focus on selected todo |
-| `s` | normal | Toggle star on selected todo (starring offers scheduling; unstarring checks for calendar blocks) |
-| `S` | normal | Add a schedule block for selected todo (duration picker → find free slot → book calendar event) |
+| `s` | normal | Enter booking mode for selected todo |
 | `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
@@ -145,18 +140,14 @@ While a notice banner is showing (1s after complete/dismiss), all keys except `e
 
 Quick todo entry (`t`) opens a lightweight textarea. On submit, the text is sent to the LLM via `buildEnrichPrompt` which enriches the raw text into structured fields (title, due, who_waiting, effort, context, detail, project_dir, proposed_prompt). The LLM also checks for duplicates by returning a `merge_into` field — if a match is found, synthesis is triggered automatically. Todos created this way enter as `backlog` status directly (skip `new`).
 
-### Schedule Mode (Booking)
-
-Schedule mode is entered via `S` (capital S). It presents a duration picker for the selected todo.
+### Booking Mode
 
 | Key | Context | Description |
 |-----|---------|-------------|
 | `left`/`h` | booking | Select shorter duration |
 | `right`/`l` | booking | Select longer duration |
-| `enter` | booking | Confirm booking: find free slot, create Calendar event, store in `cc_todo_bookings`, flash confirmation |
+| `enter` | booking | Confirm booking and trigger refresh |
 | `esc` | booking | Cancel booking |
-
-When schedule mode confirms a booking, if the todo is not already starred it becomes starred automatically.
 
 ## Event Bus
 
@@ -165,13 +156,10 @@ When schedule mode confirms a booking, if the todo is not already starred it bec
 
 ## Migrations
 
-Plugin-owned migrations:
+Two plugin-owned migrations:
 
 1. `CREATE INDEX IF NOT EXISTS idx_cc_todos_status_sort ON cc_todos(status, sort_order)` — speeds up filtered todo queries
 2. `ALTER TABLE cc_todos ADD COLUMN session_log_path TEXT` — stores the log file path for agent sessions
-3. `ALTER TABLE cc_todos ADD COLUMN focus INTEGER NOT NULL DEFAULT 0` — focus flag (bool as int); `1` means the user is paying attention to this todo
-4. `ALTER TABLE cc_todos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0` — starred flag (bool as int); `1` means the user is actively working on this todo now
-5. `CREATE TABLE IF NOT EXISTS cc_todo_bookings (id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER NOT NULL, calendar_event_id TEXT NOT NULL, start_time DATETIME NOT NULL, duration_minutes INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)` — tracks Google Calendar events booked for a todo
 
 ### Display IDs
 
@@ -187,7 +175,7 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 2. Right panel: todos sorted by sort_order, with status indicators
 3. Focus suggestion banner at top when available
 4. Warning bar when data is stale or services are unreachable
-5. Help overlay toggled with `?`. Width capped to `ContentMaxWidth` so borders render correctly on wide terminals. Key columns use `lipgloss.Width` for padding (ANSI-aware) rather than raw byte length.
+5. Help overlay toggled with `?`
 6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 8) / 2` to maximize vertical space (the extra line accounts for the triage tab bar). Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
 
 ### Todo Lifecycle
@@ -224,93 +212,43 @@ Manual todos created via `t` enter as `backlog` directly (skip `new`).
 
 When the expanded multi-column view is active, a tab bar appears below the header showing filter categories:
 
-| Tab | Shows | Notes |
-|-----|-------|-------|
-| focus | todos where `focus = true` | Yellow `★` for starred, gray `☆` for focused-but-not-starred |
-| todo | `backlog` | |
-| inbox | `new` | |
-| agents | `enqueued`, `running`, `blocked` | |
-| review | `review`, `failed` | |
-| all | all non-terminal (everything except `completed`, `dismissed`) | |
+| Tab | Shows |
+|-----|-------|
+| focus | todos where `Focus == true` |
+| todo | `backlog` |
+| inbox | `new` |
+| agents | `enqueued`, `running`, `blocked` |
+| review | `review`, `failed` |
+| all | all non-terminal (everything except `completed`, `dismissed`) |
 
 - **Tab order**: focus, todo, inbox, agents, review, all
 - **Default tab**: todo
 - `tab` cycles filter forward, `shift+tab` cycles backward
 - Switching tabs resets cursor and scroll offset to 0
-- Starred items sort to the top within any tab
 
 #### Normal View Behavior
 
 In the normal (collapsed) view:
 
-- **Todo list** shows only starred todos (`starred = true`). Starred items sort to the top within this view.
-- **Empty state**: when no todos are starred, shows the nudge: `"No starred items. Press space to expand, f to focus, s to star."`
+- **Todo list** shows only starred todos (`Starred == true`); sorted starred-first within results
+- **Nudge message** "No starred items. Press space to expand, f to focus, s to star." renders when no starred todos exist (replaces empty-list message)
 - **Triage status bar** appears below the todo list showing counts per tab — only displayed if any count is non-zero
-- **Star indicator**: each starred todo renders with a yellow `★` prefix
+
+#### Star Indicators
+
+Todos render a star prefix character in both collapsed and expanded views:
+
+- **Starred** (`Starred == true`): yellow `★ ` prefix
+- **Focused-not-starred** (`Focus == true` and `Starred == false`): gray `☆ ` prefix
+- **Neither**: no prefix (2 spaces of padding to align with starred items)
+
+Title max-width is reduced by 2 to account for the star prefix character.
 
 #### Triage Actions
 
 - `y` accepts the selected todo (sets status to `backlog`, persists to DB)
 - `Y` accepts the selected todo AND opens the task runner (detail view)
 - **Launching an agent** automatically accepts the todo (moves from `new` to agent lifecycle)
-
-### Focus & Star Priority System
-
-Todos have two priority flags:
-
-- **`focus`** (`bool`) — "I am paying attention to this." Marks a todo for visibility in the focus tab and expanded views. Does not imply active work.
-- **`starred`** (`bool`) — "I am doing this now." Surfaces the todo in the collapsed view. Starring a todo automatically sets `focus = true`. Unstarring does NOT remove focus.
-
-Both flags are stored as integers in `cc_todos` (`0` or `1`) and loaded as booleans in `db.Todo`.
-
-#### Star/Focus Indicators
-
-| Indicator | Meaning | Where shown |
-|-----------|---------|-------------|
-| Yellow `★` | Starred | All views (collapsed, expanded tabs, detail) |
-| Gray `☆` | Focused but not starred | Expanded views and detail view only (not collapsed — collapsed shows only starred) |
-
-#### Focus Toggle (`f`)
-
-- If the todo is **not focused**: set `focus = true`, persist to DB.
-- If the todo is **focused**: remove focus (`focus = false`). If the todo is also starred, the star is removed first, triggering the unstar cleanup flow (see below). After cleanup, focus is removed.
-
-#### Star Toggle (`s`)
-
-**Starring flow:**
-
-1. Set `starred = true`, `focus = true`. Persist to DB.
-2. Flash scheduling offer: `"★ <title> — Schedule time? S = yes, any key = skip"`
-3. Auto-dismiss after 3 seconds; any non-`S` key also dismisses.
-4. If user presses `S` during the flash: enter schedule mode (duration picker) immediately.
-
-**Unstarring flow:**
-
-1. Query `cc_todo_bookings` for future calendar events for this todo.
-2. If **no future bookings**: unstar immediately (`starred = false`). Focus is NOT changed.
-3. If **future bookings exist** (N events): prompt `"Release N calendar block(s)? (y/n)"`
-   - `y`: delete the events from Google Calendar via the API, remove their `cc_todo_bookings` records, then unstar.
-   - `n`: unstar without touching calendar events. Focus is NOT changed.
-
-#### Schedule Flow (`S`)
-
-1. Enter schedule mode (duration picker, same UI as booking mode).
-2. On confirm: call `findFreeSlot` (in `calendar.go`, relocated from `ai-cron`) to find the next available slot of the requested duration.
-3. Create a Google Calendar event via the Calendar API (direct TUI `tea.Cmd`, not via ai-cron pending actions).
-4. Store the event in `cc_todo_bookings` (todo_id, calendar_event_id, start_time, duration_minutes).
-5. Flash: `"Booked <duration> for <title> at <time>"`
-6. If the todo is not already starred, star it (runs the full star flow including focus=true).
-7. Can be invoked multiple times — additive (each call adds another booking record).
-
-All calendar API calls (create event, delete event, `findFreeSlot`) run as background `tea.Cmd`s so the UI is never blocked. The OAuth token source is read from config. The old `cc_pending_actions` booking flow is removed; `calendar.go` in the commandcenter plugin replaces it.
-
-#### Interaction with Complete / Dismiss
-
-Completing (`x`) or dismissing (`X`) a todo clears `starred = false` and `focus = false`. This does **not** trigger calendar cleanup — booked events are left on the calendar. The user should manually release calendar blocks before completing if needed.
-
-#### Sort Order
-
-Starred todos sort to the top within any view or filter tab. Among starred todos, existing `sort_order` applies. Among non-starred todos, existing `sort_order` applies.
 
 ### Claude Integration
 
@@ -539,8 +477,6 @@ CCC can launch, monitor, and manage headless Claude Code sessions that work on t
 | `session_status` | `string` | Current agent session state. Empty string means no session. |
 | `session_summary` | `string` | Summary of agent output after session completes. |
 | `session_id` | `string` | Claude session ID for resuming an existing interactive session (predates headless agent sessions). |
-| `focus` | `bool` | True when the user is paying attention to this todo. Set by `f` key or automatically when starring. |
-| `starred` | `bool` | True when the user is actively working on this todo now. Surfaces in collapsed view. Setting `starred=true` always sets `focus=true`. |
 
 #### Session Status Values
 
@@ -767,7 +703,6 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - View renders without panic (with and without data)
 - Help overlay toggles on `?` and renders KEYBOARD SHORTCUTS content; returns ConsumedAction so the host does not apply fallback key handling
 - Help overlay dismisses on any subsequent key press and restores the previous view
-- Help overlay right border is not clipped on wide terminals (width capped to ContentMaxWidth)
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges
@@ -868,27 +803,3 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unmerge (`U`): adjusts mergeSourceCursor when out of bounds after removal
 - Merge auto-detection: enrichment LLM returns merge_into for duplicate detection
 - Merge auto-detection: refresh dedupTodos groups flagged duplicates and calls Synthesize
-- Focus & Star: `f` key sets focus=true when todo is not focused
-- Focus & Star: `f` key removes focus (and triggers unstar cleanup) when todo is focused+starred
-- Focus & Star: `f` key sets focus=false when todo is focused but not starred (no unstar flow)
-- Focus & Star: `s` key sets starred=true and focus=true, flashes scheduling offer
-- Focus & Star: `s` key star flash auto-dismisses after 3s
-- Focus & Star: `s` key during flash with `S` enters schedule mode immediately
-- Focus & Star: unstarring with no future bookings unsets starred without prompting
-- Focus & Star: unstarring with future bookings prompts "Release N calendar block(s)? (y/n)"
-- Focus & Star: unstar prompt `y` deletes calendar events + booking records, then unsets starred
-- Focus & Star: unstar prompt `n` unsets starred, leaves calendar events and bookings intact
-- Focus & Star: unstarring does NOT remove focus
-- Focus & Star: `S` key opens duration picker (schedule mode)
-- Focus & Star: `S` confirm calls findFreeSlot, creates Calendar event, stores in cc_todo_bookings, flashes confirmation
-- Focus & Star: `S` stars the todo if not already starred
-- Focus & Star: `S` can be invoked multiple times (additive bookings)
-- Focus & Star: completing or dismissing a todo clears starred+focus (no calendar cleanup triggered)
-- Focus & Star: collapsed view shows only starred todos
-- Focus & Star: collapsed view empty state shows nudge message when no starred todos
-- Focus & Star: starred todos render with yellow ★ prefix in all views
-- Focus & Star: focused-but-not-starred todos render with gray ☆ in expanded/detail views (not collapsed)
-- Focus & Star: focus tab in expanded view shows all todos where focus=true
-- Focus & Star: tab order is focus, todo, inbox, agents, review, all
-- Focus & Star: starred todos sort to top within any view
-- Focus & Star: calendar.go runs all Calendar API calls as background tea.Cmds (non-blocking)

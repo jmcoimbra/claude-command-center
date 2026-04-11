@@ -91,7 +91,8 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 			maxVisibleTodos = 5
 		}
 		calCol := renderCalendarColumn(s, calendars, &cc.Calendar, contentWidth, panelHeight)
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
+		nudge := collapsedNudgeMessage(filteredTodos)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent, nudge)
 		calPanel := s.PanelBorder.Width(panelWidth).Render(calCol)
 		todoPanel := s.PanelBorder.Width(panelWidth).Render(todoCol)
 		columns = lipgloss.JoinHorizontal(lipgloss.Top, calPanel, " ", todoPanel)
@@ -106,7 +107,8 @@ func renderCommandCenterView(s *ccStyles, g *gradientColors, cc *db.CommandCente
 		if maxVisibleTodos < 5 {
 			maxVisibleTodos = 5
 		}
-		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent)
+		nudge := collapsedNudgeMessage(filteredTodos)
+		todoCol := renderTodoPanel(s, g, filteredTodos, completed, todoCursor, scrollOffset, maxVisibleTodos, contentWidth, frame, loadingTodoID, triageCounts, maxConcurrent, nudge)
 		hint := s.CalendarFree.Render("  Configure calendar in Settings to see your schedule here")
 		todoContent := lipgloss.JoinVertical(lipgloss.Left, todoCol, "", hint)
 		columns = s.PanelBorder.Width(panelWidth).Render(todoContent)
@@ -432,7 +434,29 @@ func renderCalendarPanel(s *ccStyles, calendars []config.CalendarEntry, events [
 	return strings.Join(lines, "\n")
 }
 
-func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int, maxConcurrent int) string {
+// collapsedNudgeMessage returns the nudge message for the collapsed view when no starred items exist.
+// Returns empty string when there are starred items to display.
+func collapsedNudgeMessage(filteredTodos []db.Todo) string {
+	if len(filteredTodos) == 0 {
+		return "No starred items. Press space to expand, f to focus, s to star."
+	}
+	return ""
+}
+
+// starPrefix returns the star indicator prefix for a todo item.
+// Returns yellow "★ " for starred items, gray "☆ " for focused-but-not-starred items,
+// or empty string for plain items.
+func starPrefix(s *ccStyles, todo db.Todo) string {
+	if todo.Starred {
+		return lipgloss.NewStyle().Foreground(s.ColorYellow).Render("★") + " "
+	}
+	if todo.Focus {
+		return lipgloss.NewStyle().Foreground(s.ColorMuted).Render("☆") + " "
+	}
+	return ""
+}
+
+func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed []db.Todo, cursor, scrollOffset, maxVisible, width int, frame int, loadingTodoID string, triageCounts map[string]int, maxConcurrent int, nudgeMessage string) string {
 	var lines []string
 
 	header := s.SectionHeader.Render(fmt.Sprintf("TODOS (%d active)", len(todos)))
@@ -447,7 +471,11 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 	lines = append(lines, "")
 
 	if len(todos) == 0 {
-		lines = append(lines, s.CalendarFree.Render("  No active todos"))
+		if nudgeMessage != "" {
+			lines = append(lines, s.CalendarFree.Render("  "+nudgeMessage))
+		} else {
+			lines = append(lines, s.CalendarFree.Render("  No active todos"))
+		}
 	}
 
 	visStart := scrollOffset
@@ -463,7 +491,8 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		lines = append(lines, s.CalendarTime.Render(fmt.Sprintf("  \u25b2 %d more above", visStart)))
 	}
 
-	titleMaxWidth := width - 8
+	// Star prefix occupies 2 characters (★/☆ + space); reduce title width accordingly.
+	titleMaxWidth := width - 10
 	if titleMaxWidth < 20 {
 		titleMaxWidth = 20
 	}
@@ -478,6 +507,7 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 		if isLoading {
 			numStr = loadingSpinnerChar(frame)
 		}
+		star := starPrefix(s, todo)
 		var line1 string
 		if i == cursor {
 			pointer := ui.PulsingPointerStyle(g, frame).Render("> ")
@@ -486,12 +516,12 @@ func renderTodoPanel(s *ccStyles, g *gradientColors, todos []db.Todo, completed 
 				styledNum = lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
 					lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(". "+title)
 			}
-			line1 = pointer + styledNum
+			line1 = pointer + star + styledNum
 		} else {
 			if isLoading {
-				line1 = "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
+				line1 = "  " + star + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
 			} else {
-				line1 = fmt.Sprintf("  %s. %s", numStr, title)
+				line1 = fmt.Sprintf("  %s%s. %s", star, numStr, title)
 			}
 		}
 		lines = append(lines, line1)
@@ -712,8 +742,15 @@ func displayContext(ctx string) string {
 var flattenTitle = ui.FlattenTitle
 
 func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num int, isCursor bool, maxWidth int, frame int, isLoading bool) string {
+	star := starPrefix(s, todo)
+	// Star prefix is 2 runes (star + space); account for it in title width.
+	starWidth := len([]rune(star))
+	if star != "" {
+		// rendered star has ANSI codes; actual displayed width is 2
+		starWidth = 2
+	}
 	prefix := fmt.Sprintf("%d. ", num)
-	prefixWidth := 2 + len(prefix)
+	prefixWidth := 2 + len(prefix) + starWidth
 	titleMax := maxWidth - prefixWidth
 	if titleMax < 10 {
 		titleMax = 10
@@ -733,16 +770,16 @@ func renderExpandedTodoItem(s *ccStyles, g *gradientColors, todo db.Todo, num in
 	if isCursor {
 		pointer := ui.PulsingPointerStyle(g, frame).Render("> ")
 		if isLoading {
-			line1 = pointer + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
+			line1 = pointer + star + lipgloss.NewStyle().Foreground(s.ColorCyan).Bold(true).Render(numStr) +
 				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(". "+title)
 		} else {
-			line1 = pointer + lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(numStr+". "+title)
+			line1 = pointer + star + lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(numStr+". "+title)
 		}
 	} else {
 		if isLoading {
-			line1 = "  " + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
+			line1 = "  " + star + lipgloss.NewStyle().Foreground(s.ColorCyan).Render(numStr) + ". " + title
 		} else {
-			line1 = "  " + numStr + ". " + title
+			line1 = "  " + star + numStr + ". " + title
 		}
 	}
 
@@ -862,6 +899,7 @@ func renderTabBar(s *ccStyles, activeFilter string, counts map[string]int, width
 		label string
 	}
 	tabs := []tabDef{
+		{"focus", "Focus"},
 		{"todo", "ToDo"},
 		{"inbox", "Inbox"},
 		{"agents", "Agents"},

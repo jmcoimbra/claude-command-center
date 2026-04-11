@@ -43,8 +43,7 @@ All types are exported for use by other packages:
 - `CalendarData` -- today/tomorrow event lists
 - `CalendarEvent` -- title, start/end times, all-day, declined, calendar_id
 - `CalendarConflict` -- overlap between two events
-- `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, `focus` (bool), `starred` (bool), etc.
-- `TodoBooking` -- calendar event scheduled for a starred todo: id (auto), todo_id, event_id (Google Calendar), start_time, end_time, duration_min, created_at
+- `Todo` -- task with status, source, due date, effort, project_dir, session_id, source_context, source_context_at, focus (bool), starred (bool), etc.
 - `Suggestions` -- AI-generated focus and ranked todo ordering with per-todo reasons
 - `PendingAction` -- queued actions (e.g., calendar bookings)
 - `Warning` -- system warnings (source, message, timestamp)
@@ -68,9 +67,9 @@ All types are exported for use by other packages:
 
 ### Database Lifecycle
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
-2. Schema creates 17 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`, `cc_todo_bookings`
+2. Schema creates 16 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`
 3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty). The `idx_cc_todos_source_ref` index excludes soft-deleted rows (`WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
-4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos, `focus` (BOOLEAN, default false) on todos, `starred` (BOOLEAN, default false) on todos
 5. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
 ### Todo Operations
@@ -78,8 +77,8 @@ All types are exported for use by other packages:
 **Soft-delete**: Todos use soft-delete via a `deleted_at` column (TEXT, nullable). When non-null, the row is considered deleted. All read queries (`dbLoadTodos`, `DBLoadTodoByID`, `DBLoadTodoByDisplayID`, `DBIsEmpty`) filter out rows where `deleted_at IS NOT NULL`. Sort-order subqueries in `DBDeferTodo`, `DBPromoteTodo`, and `DBInsertTodo` also exclude soft-deleted rows so they don't affect ordering.
 
 - `DBInsertTodo` -- auto-assigns sort_order = max+1 (excluding soft-deleted) and display_id = max+1 (including soft-deleted — display_ids are globally unique across all rows)
-- `DBCompleteTodo` -- sets status=completed, completed_at=now; clears focus=0, starred=0
-- `DBDismissTodo` -- sets status=dismissed; clears focus=0, starred=0
+- `DBCompleteTodo` -- sets status=completed, completed_at=now
+- `DBDismissTodo` -- sets status=dismissed
 - `DBRestoreTodo` -- restores to given status and completed_at (for undo)
 - `DBDeferTodo` -- sets sort_order to max+1 (moves to bottom; excludes soft-deleted from max calc)
 - `DBPromoteTodo` -- sets sort_order to min-1 (moves to top; excludes soft-deleted from min calc)
@@ -95,20 +94,6 @@ All types are exported for use by other packages:
 - `DBSwapTodoOrder` -- swaps sort_order of two todos by ID within a transaction
 - `DBLoadTodoByID` -- loads a single todo by its internal ID; returns nil, nil if not found (excludes soft-deleted)
 - `DBLoadTodoByDisplayID` -- loads a single todo by its display_id; returns nil, nil if not found (excludes soft-deleted)
-
-### Focus & Star Priority
-
-- **Schema**: `cc_todos` gains two INTEGER columns: `focus` (NOT NULL DEFAULT 0) and `starred` (NOT NULL DEFAULT 0)
-- **Schema**: `cc_todo_bookings` table with `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `todo_id` (TEXT), `event_id` (TEXT, Google Calendar event ID), `start_time` (TEXT RFC3339), `end_time` (TEXT RFC3339), `duration_min` (INTEGER), `created_at` (TEXT RFC3339). Indexed on `todo_id`.
-- **Invariant**: starred=1 implies focus=1 — a todo cannot be starred without being focused
-- `DBSetTodoStar(db, todoID, starred bool)` -- if starring: sets starred=1 AND focus=1. If unstarring: sets starred=0 only (does not change focus).
-- `DBSetTodoFocus(db, todoID, focus bool)` -- if focusing: sets focus=1. If unfocusing: sets focus=0 AND starred=0 (can't be starred without focus).
-- `DBClearStarAndFocus(db, todoID)` -- sets focus=0, starred=0. Called by complete/dismiss.
-- `DBInsertBooking(db, booking TodoBooking)` -- inserts a new booking record
-- `DBDeleteFutureBookings(db, todoID)` -- deletes bookings where start_time > now (RFC3339 string comparison using strftime)
-- `DBGetBookingsForTodo(db, todoID)` -- returns all bookings for a todo ordered by start_time ASC
-- `DBGetFutureBookingsForTodo(db, todoID)` -- returns only future bookings ordered by start_time ASC
-- **Datetime comparison**: future-booking queries compare RFC3339 strings using `strftime('%Y-%m-%dT%H:%M:%SZ', 'now')` to produce a compatible format for string comparison
 
 ### Calendar & Suggestions
 - **Calendar day-clamping on load**: `dbLoadCalendar` clamps multi-day event times to their day boundaries. Events whose start is before the day start are clamped to midnight; events whose end extends past the day end are clamped to end-of-day. Events are then re-sorted by effective start time. This ensures multi-day events sort and display correctly (e.g., a 3-day conference shows as starting at midnight today, not at its original start time days ago).
@@ -315,12 +300,6 @@ All types are exported for use by other packages:
 - `DBUpdateSessionState` auto-sets ended_at for "ended" state
 - Archived session insert and load round-trip
 - `DBDeleteArchivedSession` removes by session ID
-- `DBSetTodoStar` stars/unstars a todo (stars also set focus)
-- `DBSetTodoFocus` focuses/unfocuses a todo (unfocusing also clears star)
-- `DBInsertBooking` inserts a calendar booking record for a todo
-- `DBDeleteFutureBookings` deletes future bookings for a todo
-- `DBGetBookingsForTodo` returns all bookings for a todo
-- `DBGetFutureBookingsForTodo` returns only future bookings for a todo
 - Agent cost: insert returns valid row ID
 - Agent cost: update finished sets all metric fields
 - `DBSumCostsSince` aggregates cost_usd for matching window
@@ -339,11 +318,3 @@ All types are exported for use by other packages:
 - Soft-deleted todos excluded from sort_order subqueries in defer/promote/insert
 - `display_id` assignment includes soft-deleted rows (globally unique)
 - Soft-deleted source_ref freed from unique index, allowing re-insert with same source_ref
-- `TestStarTodo` -- starring sets both starred=true and focus=true
-- `TestUnstarTodo` -- unstarring clears starred but leaves focus unchanged
-- `TestToggleFocus` -- focusing sets focus=true; unfocusing sets focus=false; starring alone not set
-- `TestUnfocusStarredTodo` -- unfocusing a starred item clears both focus and starred
-- `TestCompleteDismissClears` -- completing or dismissing a starred+focused todo clears both flags
-- `TestInsertBooking` -- booking round-trip: insert, load by todo_id, verify all fields
-- `TestGetBookings` -- DBGetBookingsForTodo returns all; DBGetFutureBookingsForTodo returns only future
-- `TestDeleteFutureBookings` -- deletes only future bookings, past bookings remain
