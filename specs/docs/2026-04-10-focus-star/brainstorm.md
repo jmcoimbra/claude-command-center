@@ -130,6 +130,15 @@ There is no concept of "total effort" or "deadline" in v1. Each scheduling actio
 
 This keeps the model simple and under user control.
 
+## Calendar API Architecture
+
+Calendar scheduling and cleanup happen **directly from the TUI** in background `tea.Cmd`s — NOT through ai-cron pending actions. This gives instant feedback when booking or releasing calendar blocks.
+
+- **Scheduling:** TUI gets an OAuth token source from config, calls `findFreeSlot` to find an open slot, creates the event via `Events.Insert`, and writes the booking record to `cc_todo_bookings` — all in a single background command. Flash message shows the booked time immediately.
+- **Cleanup on unstar:** TUI queries `cc_todo_bookings` for future events, deletes each via `Events.Delete`, removes DB records. Confirmation is instant.
+- **`findFreeSlot`:** Relocated from `internal/refresh/sources/calendar/actions.go` to a shared package so both the TUI and ai-cron can use it.
+- **Old booking flow removed:** The `cc_pending_actions` booking type and `executePendingActions` in ai-cron are replaced by this direct approach. The pending actions table may remain if used for other action types.
+
 ## Interaction with Existing Features
 
 - **Sort order**: Starred items sort to the top within any view. Within starred items, existing sort_order applies.

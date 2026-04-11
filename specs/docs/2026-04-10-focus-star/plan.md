@@ -27,6 +27,7 @@ Update `specs/builtin/command-center.md` to document:
 - Focus toggle flow (unfocusing a starred item triggers unstar cleanup)
 - Star/focus indicators (yellow `★` for starred, gray `☆` for focused)
 - Interaction with complete/dismiss (clears star+focus, no calendar cleanup)
+- **Calendar API architecture:** Scheduling and cleanup happen directly from the TUI in background `tea.Cmd`s (not via ai-cron pending actions). Document: new `calendar.go` file in commandcenter plugin, `findFreeSlot` relocation to shared package, removal of old `cc_pending_actions` booking flow, OAuth token source usage from config.
 
 Also update the key binding table to replace `s` (booking mode) with `s` (star toggle) and add `S` and `f`.
 
