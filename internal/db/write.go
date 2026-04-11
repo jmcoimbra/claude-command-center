@@ -702,6 +702,52 @@ func DBDeleteTodo(db *sql.DB, id string) error {
 	return err
 }
 
+// DBSetTodoStar sets the starred field on a todo.
+func DBSetTodoStar(db *sql.DB, id string, starred bool) error {
+	now := FormatTime(time.Now())
+	v := 0
+	if starred {
+		v = 1
+	}
+	_, err := db.Exec(`UPDATE cc_todos SET starred = ?, updated_at = ? WHERE id = ?`, v, now, id)
+	if err != nil {
+		return fmt.Errorf("set todo star %s: %w", id, err)
+	}
+	return nil
+}
+
+// DBSetTodoFocus sets the focused field on a todo.
+// Unfocusing also clears starred (losing focus means no longer starred either).
+func DBSetTodoFocus(db *sql.DB, id string, focused bool) error {
+	now := FormatTime(time.Now())
+	v := 0
+	if focused {
+		v = 1
+	}
+	var err error
+	if !focused {
+		// Removing focus also removes star
+		_, err = db.Exec(`UPDATE cc_todos SET focused = 0, starred = 0, updated_at = ? WHERE id = ?`, now, id)
+	} else {
+		_, err = db.Exec(`UPDATE cc_todos SET focused = ?, updated_at = ? WHERE id = ?`, v, now, id)
+	}
+	if err != nil {
+		return fmt.Errorf("set todo focus %s: %w", id, err)
+	}
+	return nil
+}
+
+// DBGetFutureBookingsForTodo returns the count of future calendar bookings for a todo.
+func DBGetFutureBookingsForTodo(db *sql.DB, todoID string) (int, error) {
+	now := FormatTime(time.Now())
+	var count int
+	err := db.QueryRow(`SELECT COUNT(*) FROM cc_todo_bookings WHERE todo_id = ? AND end_time > ?`, todoID, now).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("get future bookings for todo %s: %w", todoID, err)
+	}
+	return count, nil
+}
+
 // ---------------------------------------------------------------------------
 // Write methods -- Sessions (daemon registry)
 // ---------------------------------------------------------------------------

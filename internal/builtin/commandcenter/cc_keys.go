@@ -69,6 +69,16 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleAddingTodoRich(msg)
 	}
 
+	// Schedule offer mode (after starring: S=schedule, other=skip)
+	if p.scheduleOfferMode {
+		return p.handleScheduleOffer(msg)
+	}
+
+	// Unstar confirm mode (after unstarring with future bookings: y/n)
+	if p.unstarConfirmMode {
+		return p.handleUnstarConfirm(msg)
+	}
+
 	// Booking mode
 	if p.bookingMode {
 		return p.handleBooking(msg)
@@ -563,9 +573,120 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "s":
+		// Star toggle
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
+			todo := activeTodos[p.ccCursor]
+			todoID := todo.ID
+			if !todo.Starred {
+				// Star it: set starred=true and focused=true
+				for i := range p.cc.Todos {
+					if p.cc.Todos[i].ID == todoID {
+						p.cc.Todos[i].Starred = true
+						p.cc.Todos[i].Focused = true
+						break
+					}
+				}
+				p.scheduleOfferMode = true
+				p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
+				p.flashMessageAt = time.Now()
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					if err := db.DBSetTodoStar(database, todoID, true); err != nil {
+						return err
+					}
+					return db.DBSetTodoFocus(database, todoID, true)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+			// Unstar it: check for future bookings
+			futureBookings, err := db.DBGetFutureBookingsForTodo(p.database, todoID)
+			if err != nil || futureBookings == 0 {
+				// No future bookings — unstar immediately
+				for i := range p.cc.Todos {
+					if p.cc.Todos[i].ID == todoID {
+						p.cc.Todos[i].Starred = false
+						break
+					}
+				}
+				p.flashMessage = "Unstarred: " + todo.Title
+				p.flashMessageAt = time.Now()
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBSetTodoStar(database, todoID, false)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+			// Future bookings exist — ask to release them
+			p.unstarConfirmMode = true
+			p.unstarConfirmTodoID = todoID
+			if futureBookings == 1 {
+				p.flashMessage = "Release calendar block? (y/n)"
+			} else {
+				p.flashMessage = fmt.Sprintf("Release %d calendar blocks? (y/n)", futureBookings)
+			}
+			p.flashMessageAt = time.Now()
+			return plugin.NoopAction()
+		}
+		return plugin.NoopAction()
+
+	case "S":
+		// Schedule: enter booking mode (star if not already starred)
+		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
+			todo := activeTodos[p.ccCursor]
+			todoID := todo.ID
 			p.bookingMode = true
 			p.bookingCursor = 2
+			if !todo.Starred {
+				for i := range p.cc.Todos {
+					if p.cc.Todos[i].ID == todoID {
+						p.cc.Todos[i].Starred = true
+						p.cc.Todos[i].Focused = true
+						break
+					}
+				}
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					if err := db.DBSetTodoStar(database, todoID, true); err != nil {
+						return err
+					}
+					return db.DBSetTodoFocus(database, todoID, true)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+		}
+		return plugin.NoopAction()
+
+	case "f":
+		// Focus toggle
+		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
+			todo := activeTodos[p.ccCursor]
+			todoID := todo.ID
+			if todo.Focused {
+				// Unfocus: remove focus and star
+				for i := range p.cc.Todos {
+					if p.cc.Todos[i].ID == todoID {
+						p.cc.Todos[i].Focused = false
+						p.cc.Todos[i].Starred = false
+						break
+					}
+				}
+				p.flashMessage = "Unfocused: " + todo.Title
+				p.flashMessageAt = time.Now()
+				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					return db.DBSetTodoFocus(database, todoID, false)
+				})
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			}
+			// Focus it
+			for i := range p.cc.Todos {
+				if p.cc.Todos[i].ID == todoID {
+					p.cc.Todos[i].Focused = true
+					break
+				}
+			}
+			p.flashMessage = "Focused: " + todo.Title
+			p.flashMessageAt = time.Now()
+			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+				return db.DBSetTodoFocus(database, todoID, true)
+			})
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
 		}
 		return plugin.NoopAction()
 
@@ -747,6 +868,66 @@ func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
 	}
 
 	return plugin.NoopAction()
+}
+
+func (p *Plugin) handleScheduleOffer(msg tea.KeyMsg) plugin.Action {
+	p.scheduleOfferMode = false
+	p.flashMessage = ""
+	if msg.String() == "S" {
+		// Enter booking mode
+		activeTodos := p.filteredTodos()
+		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
+			p.bookingMode = true
+			p.bookingCursor = 2
+		}
+		return plugin.NoopAction()
+	}
+	// Any other key: exit offer mode and process key normally
+	return p.handleCommandTab(msg)
+}
+
+func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
+	todoID := p.unstarConfirmTodoID
+	p.unstarConfirmMode = false
+	p.unstarConfirmTodoID = ""
+	p.flashMessage = ""
+
+	switch msg.String() {
+	case "y":
+		// Unstar and release bookings (calendar cleanup is handled by Stage 5b)
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				p.cc.Todos[i].Starred = false
+				break
+			}
+		}
+		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			// Delete future bookings records
+			_, err := database.Exec(`DELETE FROM cc_todo_bookings WHERE todo_id = ?`, todoID)
+			if err != nil {
+				return err
+			}
+			return db.DBSetTodoStar(database, todoID, false)
+		})
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+
+	case "n":
+		// Unstar but keep bookings
+		for i := range p.cc.Todos {
+			if p.cc.Todos[i].ID == todoID {
+				p.cc.Todos[i].Starred = false
+				break
+			}
+		}
+		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+			return db.DBSetTodoStar(database, todoID, false)
+		})
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+
+	default:
+		// Any other key: cancel, stay starred
+		return plugin.NoopAction()
+	}
 }
 
 func (p *Plugin) handleSearchInput(msg tea.KeyMsg) plugin.Action {

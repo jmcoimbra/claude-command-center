@@ -563,9 +563,10 @@ func TestHelpOverlay(t *testing.T) {
 func TestBookingMode(t *testing.T) {
 	p := testPluginWithCC(t)
 
-	p.HandleKey(keyMsg("s"))
+	// S (shift+s) enters booking mode directly
+	p.HandleKey(keyMsg("S"))
 	if !p.bookingMode {
-		t.Error("s should enter booking mode")
+		t.Error("S should enter booking mode")
 	}
 	if p.bookingCursor != 2 {
 		t.Errorf("initial booking cursor = %d, want 2", p.bookingCursor)
@@ -586,6 +587,283 @@ func TestBookingMode(t *testing.T) {
 	p.HandleKey(specialKeyMsg(tea.KeyEsc))
 	if p.bookingMode {
 		t.Error("esc should cancel booking mode")
+	}
+}
+
+func TestStarKey(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// Star an unstarred todo
+	action := p.HandleKey(keyMsg("s"))
+	if action.TeaCmd == nil {
+		t.Error("s on unstarred todo should return a TeaCmd for DB write")
+	}
+
+	// In-memory state should reflect starred + focused
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after star")
+	}
+	if !updated.Starred {
+		t.Error("todo should be starred after s")
+	}
+	if !updated.Focused {
+		t.Error("todo should be focused after starring")
+	}
+
+	// Should enter schedule offer mode
+	if !p.scheduleOfferMode {
+		t.Error("s on unstarred todo should enter scheduleOfferMode")
+	}
+
+	// Flash message should contain the star symbol and title
+	if !strings.Contains(p.flashMessage, "★") {
+		t.Errorf("flash message should contain ★, got %q", p.flashMessage)
+	}
+	if !strings.Contains(p.flashMessage, todo.Title) {
+		t.Errorf("flash message should contain todo title %q, got %q", todo.Title, p.flashMessage)
+	}
+}
+
+func TestUnstarKey(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// First star the todo (in-memory only, no future bookings)
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todo.ID {
+			p.cc.Todos[i].Starred = true
+			break
+		}
+	}
+	p.scheduleOfferMode = false // reset offer mode
+
+	// Now unstar it — no future bookings in test DB so should unstar immediately
+	action := p.HandleKey(keyMsg("s"))
+	if action.TeaCmd == nil {
+		t.Error("s on starred todo should return a TeaCmd for DB write")
+	}
+
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after unstar")
+	}
+	if updated.Starred {
+		t.Error("todo should be unstarred after s on starred todo")
+	}
+
+	// Flash message should mention "Unstarred"
+	if !strings.Contains(p.flashMessage, "Unstarred") {
+		t.Errorf("flash message should contain 'Unstarred', got %q", p.flashMessage)
+	}
+
+	// Should NOT be in schedule offer mode
+	if p.scheduleOfferMode {
+		t.Error("unstarring should not enter scheduleOfferMode")
+	}
+
+	// Should NOT be in unstar confirm mode (no future bookings)
+	if p.unstarConfirmMode {
+		t.Error("unstarring with no bookings should not enter unstarConfirmMode")
+	}
+}
+
+func TestFocusKey(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// Focus an unfocused todo
+	action := p.HandleKey(keyMsg("f"))
+	if action.TeaCmd == nil {
+		t.Error("f on unfocused todo should return a TeaCmd for DB write")
+	}
+
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after focus")
+	}
+	if !updated.Focused {
+		t.Error("todo should be focused after f")
+	}
+
+	// Flash message should mention "Focused"
+	if !strings.Contains(p.flashMessage, "Focused") {
+		t.Errorf("flash message should contain 'Focused', got %q", p.flashMessage)
+	}
+
+	// Now unfocus it
+	action = p.HandleKey(keyMsg("f"))
+	if action.TeaCmd == nil {
+		t.Error("f on focused todo should return a TeaCmd for DB write")
+	}
+
+	updated = p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after unfocus")
+	}
+	if updated.Focused {
+		t.Error("todo should be unfocused after second f")
+	}
+
+	// Flash message should mention "Unfocused"
+	if !strings.Contains(p.flashMessage, "Unfocused") {
+		t.Errorf("flash message should contain 'Unfocused', got %q", p.flashMessage)
+	}
+}
+
+func TestScheduleKey(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// S on unstarred todo: should enter booking mode and star the todo
+	_ = p.HandleKey(keyMsg("S"))
+
+	if !p.bookingMode {
+		t.Error("S should enter booking mode")
+	}
+	if p.bookingCursor != 2 {
+		t.Errorf("initial booking cursor = %d, want 2", p.bookingCursor)
+	}
+
+	// Todo should be starred since it wasn't before
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after S")
+	}
+	if !updated.Starred {
+		t.Error("todo should be starred after S on unstarred todo")
+	}
+
+	// Esc cancels booking mode
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.bookingMode {
+		t.Error("esc should cancel booking mode")
+	}
+}
+
+func TestScheduleOfferModeInterception(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Star a todo to enter offer mode
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleOfferMode {
+		t.Fatal("expected scheduleOfferMode after starring")
+	}
+
+	// S key in offer mode should enter booking mode
+	p.HandleKey(keyMsg("S"))
+	if p.scheduleOfferMode {
+		t.Error("S in offer mode should exit offer mode")
+	}
+	if !p.bookingMode {
+		t.Error("S in offer mode should enter booking mode")
+	}
+}
+
+func TestScheduleOfferModeAnyKeySkips(t *testing.T) {
+	p := testPluginWithCC(t)
+
+	// Star a todo to enter offer mode
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleOfferMode {
+		t.Fatal("expected scheduleOfferMode after starring")
+	}
+
+	// Any other key should exit offer mode without entering booking mode
+	p.HandleKey(keyMsg("j"))
+	if p.scheduleOfferMode {
+		t.Error("any key in offer mode should exit offer mode")
+	}
+	if p.bookingMode {
+		t.Error("non-S key in offer mode should not enter booking mode")
+	}
+	// j should have moved the cursor
+	if p.ccCursor != 1 {
+		t.Errorf("j in offer mode should move cursor: cursor = %d, want 1", p.ccCursor)
+	}
+}
+
+func TestUnstarConfirmModeWithFutureBookings(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// Star the todo in-memory
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todo.ID {
+			p.cc.Todos[i].Starred = true
+			break
+		}
+	}
+
+	// Insert a future booking into the DB so unstar triggers confirm mode
+	future := time.Now().Add(24 * time.Hour)
+	_, err := p.database.Exec(`INSERT INTO cc_todo_bookings (todo_id, start_time, end_time, created_at) VALUES (?, ?, ?, ?)`,
+		todo.ID,
+		fmt.Sprintf("%s", future.UTC().Format(time.RFC3339)),
+		fmt.Sprintf("%s", future.Add(time.Hour).UTC().Format(time.RFC3339)),
+		fmt.Sprintf("%s", time.Now().UTC().Format(time.RFC3339)),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert test booking: %v", err)
+	}
+
+	// Pressing s should enter unstarConfirmMode
+	p.HandleKey(keyMsg("s"))
+	if !p.unstarConfirmMode {
+		t.Error("s on starred todo with future bookings should enter unstarConfirmMode")
+	}
+	if p.unstarConfirmTodoID != todo.ID {
+		t.Errorf("unstarConfirmTodoID = %q, want %q", p.unstarConfirmTodoID, todo.ID)
+	}
+
+	// Flash should mention "Release" and "calendar block"
+	if !strings.Contains(p.flashMessage, "Release") {
+		t.Errorf("flash message should contain 'Release', got %q", p.flashMessage)
+	}
+
+	// Press y: should unstar
+	p.HandleKey(keyMsg("y"))
+	if p.unstarConfirmMode {
+		t.Error("y should exit unstarConfirmMode")
+	}
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after unstar confirm")
+	}
+	if updated.Starred {
+		t.Error("todo should be unstarred after confirming with y")
+	}
+}
+
+func TestUnstarConfirmModeN(t *testing.T) {
+	p := testPluginWithCC(t)
+	todo := p.cc.ActiveTodos()[0]
+
+	// Star the todo and set confirm mode directly
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == todo.ID {
+			p.cc.Todos[i].Starred = true
+			break
+		}
+	}
+	p.unstarConfirmMode = true
+	p.unstarConfirmTodoID = todo.ID
+
+	// Press n: should unstar but keep bookings (just unstar via DB)
+	action := p.HandleKey(keyMsg("n"))
+	if p.unstarConfirmMode {
+		t.Error("n should exit unstarConfirmMode")
+	}
+	if action.TeaCmd == nil {
+		t.Error("n in confirm mode should return a TeaCmd for DB write")
+	}
+	updated := p.cc.FindTodo(todo.ID)
+	if updated == nil {
+		t.Fatal("could not find todo after n in confirm mode")
+	}
+	if updated.Starred {
+		t.Error("todo should be unstarred after pressing n in confirm mode")
 	}
 }
 

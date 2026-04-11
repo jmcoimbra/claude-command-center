@@ -178,6 +178,11 @@ type Plugin struct {
 	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
 	gPending bool
 
+	// Star / focus / schedule offer modes
+	scheduleOfferMode     bool   // after starring: intercepts next keypress (S=schedule, other=skip)
+	unstarConfirmMode     bool   // after unstarring with future bookings: intercepts y/n
+	unstarConfirmTodoID   string // which todo is pending unstar confirmation
+
 	// Merge source cursor for unmerge UX in detail view
 	mergeSourceCursor int
 

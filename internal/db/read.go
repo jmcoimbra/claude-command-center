@@ -63,7 +63,9 @@ func LoadCommandCenterFromDB(db *sql.DB) (*CommandCenter, error) {
 func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 	rows, err := db.Query(`SELECT id, COALESCE(display_id, 0), title, status, source, source_ref, context, detail,
 		who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt,
-		session_summary, session_log_path, source_context, source_context_at, created_at, completed_at
+		session_summary, session_log_path, source_context, source_context_at,
+		COALESCE(starred, 0), COALESCE(focused, 0),
+		created_at, completed_at
 		FROM cc_todos WHERE deleted_at IS NULL ORDER BY sort_order ASC`)
 	if err != nil {
 		return nil, err
@@ -77,10 +79,12 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		var completedStr sql.NullString
 		var sourceRef, ctx, detail, who, projDir, launchMode, due, effort, sessionID, proposedPrompt, sessionSummary, sessionLogPath sql.NullString
 		var sourceContext, sourceContextAt sql.NullString
+		var starred, focused int
 
 		err := rows.Scan(&t.ID, &t.DisplayID, &t.Title, &t.Status, &t.Source,
 			&sourceRef, &ctx, &detail, &who, &projDir, &launchMode, &due, &effort, &sessionID,
 			&proposedPrompt, &sessionSummary, &sessionLogPath, &sourceContext, &sourceContextAt,
+			&starred, &focused,
 			&createdStr, &completedStr)
 		if err != nil {
 			return nil, err
@@ -100,6 +104,8 @@ func dbLoadTodos(db *sql.DB) ([]Todo, error) {
 		t.SessionLogPath = sessionLogPath.String
 		t.SourceContext = sourceContext.String
 		t.SourceContextAt = sourceContextAt.String
+		t.Starred = starred != 0
+		t.Focused = focused != 0
 		t.CreatedAt = ParseTime(createdStr)
 		if completedStr.Valid {
 			ct := ParseTime(completedStr.String)
