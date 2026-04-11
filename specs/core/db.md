@@ -77,7 +77,7 @@ All types are exported for use by other packages:
 1. `OpenDB(dbPath)` creates directories, opens SQLite, sets WAL + busy_timeout + synchronous=NORMAL, max 1 connection, runs `migrateSchema`
 2. Schema creates 17 tables: `cc_todos`, `cc_calendar_cache`, `cc_suggestions`, `cc_pending_actions`, `cc_meta`, `cc_bookmarks`, `cc_learned_paths`, `cc_source_sync`, `cc_todo_merges`, `cc_pull_requests`, `cc_sessions`, `cc_automation_runs`, `cc_agent_costs`, `cc_budget_state`, `cc_archived_sessions`, `cc_ignored_repos`, `cc_todo_bookings`
 3. Unique indexes on `source_ref` for todos and pull requests (WHERE NOT NULL/empty). The `idx_cc_todos_source_ref` index excludes soft-deleted rows (`WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
-4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos, `starred` (INTEGER, default 0) and `focus` (INTEGER, default 0) on todos
+4. Post-DDL migrations add columns if missing (ALTER TABLE, errors ignored): `calendar_id` on events, `session_id` on todos, `sort_order` on learned paths, `description` (TEXT, default '') on learned paths, worktree columns on bookmarks, `source_context` and `source_context_at` on todos, `deleted_at` (TEXT, nullable) on todos, `starred` (INTEGER, default 0) and `focus` (INTEGER, default 0) on todos. **Important**: columns removed by `migrateTodoStatusFSM` (`session_status`, `triage_status`) must NOT be re-added by earlier ALTER TABLE statements — doing so causes the FSM migration to re-trigger on every startup, recreating the table and destroying focus/starred data (BUG-150).
 5. `cc_todo_bookings` table schema: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `todo_id` (TEXT NOT NULL, FK to cc_todos), `event_id` (TEXT NOT NULL), `start_time` (TEXT NOT NULL), `end_time` (TEXT NOT NULL), `duration_min` (INTEGER NOT NULL), `created_at` (TEXT NOT NULL). Indexed on `(todo_id, start_time)` for efficient future-booking queries.
 6. Post-DDL migration fixes duplicate `sort_order` values on `cc_learned_paths` using `ROW_NUMBER()` window function
 
@@ -266,6 +266,8 @@ All types are exported for use by other packages:
 - DBSaveRefreshResult round-trip
 - DBSaveRefreshResult preserves focus/starred across refresh cycles (BUG-147)
 - DBSaveRefreshResult preserves session_id/session_summary/session_log_path across refresh cycles (BUG-149)
+- Focus/starred survive DB close+reopen (CCC restart) — schema migration is idempotent (BUG-150)
+- Schema migration does not re-add removed columns (`session_status`, `triage_status`) on subsequent runs
 - In-memory mutations (complete, remove, add, defer, promote)
 - ActiveTodos/CompletedTodos filtering
 - DueUrgency for overdue/soon/later/none/bad-date

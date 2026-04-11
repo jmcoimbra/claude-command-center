@@ -129,9 +129,11 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN worktree_path TEXT`)
 	_, _ = db.Exec(`ALTER TABLE cc_bookmarks ADD COLUMN source_repo TEXT`)
 
-	// Add proposed_prompt and session_status columns to todos if missing (added for todo agent launcher)
+	// Add proposed_prompt column to todos if missing (added for todo agent launcher)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN proposed_prompt TEXT`)
-	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_status TEXT`)
+	// NOTE: session_status was removed by migrateTodoStatusFSM. Do NOT re-add
+	// it — doing so causes the FSM migration to re-trigger on every startup,
+	// recreating the table and dropping focus/starred data (BUG-150).
 
 	// Add display_id column for stable human-readable references (e.g. "TODO #19")
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN display_id INTEGER`)
@@ -143,8 +145,9 @@ func migrateSchema(db *sql.DB) error {
 		) ranked WHERE ranked.id = cc_todos.id
 	) WHERE display_id IS NULL`)
 
-	// Add triage_status column to todos if missing (added for todo triage tabs)
-	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN triage_status TEXT NOT NULL DEFAULT 'accepted'`)
+	// NOTE: triage_status was removed by migrateTodoStatusFSM. Do NOT re-add
+	// it — doing so causes the FSM migration to re-trigger on every startup,
+	// recreating the table and dropping focus/starred data (BUG-150).
 
 	// Add session_summary column to todos if missing (added for agent review summaries)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN session_summary TEXT`)
