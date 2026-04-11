@@ -82,7 +82,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `f` | normal | Toggle focus on selected todo (focus = move to top; unfocus clears star+focus) |
 | `s` | normal | Toggle star on selected todo (star = starred+focused+accepted; unstar checks for calendar bookings) |
 | `S` | normal | Schedule calendar block for selected todo (enters booking mode; auto-stars if not already starred) |
-| `r` | normal | Manual refresh (spawns ai-cron) |
+| `r` | normal | Manual refresh (spawns ai-cron); shows "Refreshing..." flash, then "Refreshed" on success |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
 | `t` | normal | Quick todo add (opens lightweight textarea, `ctrl+d` submits for LLM enrichment) |
@@ -374,7 +374,7 @@ When a user completes (`x`), dismisses (`X`), or changes the status of a todo in
 ### Refresh (ai-cron)
 
 - Auto-refresh triggers when data is older than a threshold (tick-based)
-- Manual refresh via `r` key
+- Manual refresh via `r` key — shows "Refreshing..." flash immediately and "Refreshed" flash on success
 - Spawns `ai-cron` binary, then reloads from DB
 - Refresh binary located next to running executable, then falls back to PATH
 - **Incremental sync**: Granola and Slack sources check `cc_source_sync` for their last successful sync time and skip already-processed meetings/messages, reducing LLM calls
