@@ -86,14 +86,12 @@ func scheduleBlockCmd(p *Plugin, todoID, title string, durationMinutes int) tea.
 		// Persist the booking record to the database.
 		if database != nil {
 			booking := db.TodoBooking{
-				ID:              db.GenID(),
-				TodoID:          todoID,
-				CalendarEventID: created.Id,
-				CalendarID:      "primary",
-				StartTime:       slot,
-				EndTime:         endTime,
-				DurationMinutes: durationMinutes,
-				CreatedAt:       time.Now(),
+				TodoID:      todoID,
+				EventID:     created.Id,
+				StartTime:   slot,
+				EndTime:     endTime,
+				DurationMin: durationMinutes,
+				CreatedAt:   time.Now(),
 			}
 			if err := db.DBInsertBooking(database, booking); err != nil {
 				// Event was created but booking record failed — log but still report success.
@@ -149,7 +147,7 @@ func releaseBookingsCmd(p *Plugin, todoID string) tea.Cmd {
 
 		deleted := 0
 		for _, b := range bookings {
-			if err := srv.Events.Delete(b.CalendarID, b.CalendarEventID).Context(ctx).Do(); err != nil {
+			if err := srv.Events.Delete("primary", b.EventID).Context(ctx).Do(); err != nil {
 				// Log but continue — the event may have been manually deleted.
 				continue
 			}
