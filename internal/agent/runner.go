@@ -92,8 +92,9 @@ type Session struct {
 	// Pty is the PTY master file descriptor when the session is launched via PTY.
 	Pty *os.File
 
-	// StdinWriter is the writable end of the stdin pipe for -p mode sessions.
-	// Used by SendUserMessage as a fallback when Pty is nil.
+	// StdinWriter is the writable end of the stdin pipe for interactive sessions.
+	// Only set for resume sessions (where Pty is also set) or future interactive modes.
+	// Nil for -p mode sessions, which are non-interactive.
 	StdinWriter io.WriteCloser
 
 	// Events tracks parsed session events for the live viewer.

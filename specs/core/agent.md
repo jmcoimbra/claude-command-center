@@ -10,7 +10,7 @@ Manages headless Claude Code agent sessions from within CCC. Provides process li
 
 - **Request**: describes an agent to spawn
   - `ID` — unique identifier (e.g., todo ID), used for dedup and cooldown tracking
-  - `Prompt` — initial text sent to the agent (via stdin pipe for new sessions, PTY for resume sessions)
+  - `Prompt` — initial text sent to the agent (via stdin pipe, closed immediately after write, for new sessions; PTY for resume sessions)
   - `ProjectDir` — working directory for the agent process
   - `Worktree` — if true, passes `--worktree` to `claude`
   - `Permission` — permission mode string (`"default"`, `"plan"`, `"auto"`)
@@ -59,7 +59,8 @@ The `Runner` interface is the low-level session manager. `NewRunner(maxConcurren
    **New sessions (no ResumeID):**
    - Generates a UUID for the Claude session ID upfront.
    - Builds CLI args: `claude -p --verbose --output-format stream-json --session-id UUID [--permission-mode MODE] [--worktree] [--max-budget-usd N]`.
-   - Passes the prompt via stdin pipe (`cmd.Stdin = strings.NewReader(prompt)`).
+   - Writes the prompt to an `io.Pipe` stdin and **immediately closes the writer** — `claude -p` reads stdin until EOF before processing, so leaving the pipe open would block the agent forever.
+   - `StdinWriter` is nil for new sessions — `-p` mode is non-interactive and cannot accept follow-up messages.
    - Captures stdout via `cmd.StdoutPipe()` for stream-json event parsing.
    - Starts the process via `cmd.Start()` (no PTY needed).
    - Registers the session in the active map.
@@ -116,7 +117,7 @@ The `Runner` interface is the low-level session manager. `NewRunner(maxConcurren
 **Other:**
 
 - `CheckProcesses()` polls active sessions for completion (via the `done` channel) and status changes. Returns batched tea messages for finished, blocked, and session-ID-captured events.
-- `SendMessage(id, message)` writes to the PTY stdin and resets status from `"blocked"` to `"processing"`.
+- `SendMessage(id, message)` writes to the PTY (resume sessions) or StdinWriter (if available) and resets status from `"blocked"` to `"processing"`. Returns an error for `-p` mode sessions where StdinWriter is nil.
 - `Watch(id)` returns a `tea.Cmd` that listens on the session's `EventsCh`.
 
 ### GovernedRunner (budget + rate limit enforcement)
@@ -294,6 +295,7 @@ All settings live under the `agent:` key in `~/.config/ccc/config.yaml` via `con
 - Duplicate request ID (already active or queued): silently ignored, returns `(false, nil)`
 - Native log file does not appear within 30 seconds (resume sessions only): monitoring goroutine exits, session runs blind. New sessions read from stdout and are not affected by native log availability.
 - `NativeLogPath` encodes project dir with leading `-` (e.g., `/Users/aaron/project` → `-Users-aaron-project`) matching Claude CLI's actual directory naming; incorrect encoding causes session viewer to show "Waiting for events..." indefinitely (BUG-122)
+- Stdin pipe for new sessions must be closed after writing the prompt — `claude -p` reads until EOF. Leaving the pipe open causes the agent to hang with "Waiting for events..." indefinitely (BUG-130)
 - Event channel full (64 capacity): events dropped silently (non-blocking send)
 - Process exits before `CheckProcesses` runs: `SessionIDCapturedMsg` emitted before `SessionFinishedMsg` to ensure session ID is persisted
 - Inner runner queues a governed launch: cost row is immediately cleaned up to avoid phantom budget consumption

@@ -356,9 +356,12 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 				return SessionFinishedMsg{ID: req.ID, ExitCode: -1}
 			}
 
-			// Write the initial prompt, then keep the pipe open for follow-ups.
+			// Write the initial prompt and close stdin. The -p flag reads
+			// stdin until EOF before processing — leaving the pipe open
+			// would block the agent forever.
 			go func() {
 				stdinWriter.Write([]byte(req.Prompt + "\n"))
+				stdinWriter.Close()
 			}()
 
 			sess := &Session{
@@ -368,7 +371,7 @@ func (r *defaultRunner) launchSession(req Request) tea.Cmd {
 				Status:      "processing",
 				StartedAt:   time.Now(),
 				LogPath:     logPath,
-				StdinWriter: stdinWriter,
+				StdinWriter: nil, // -p mode is non-interactive; no follow-up messages
 				EventsCh:    make(chan SessionEvent, 64),
 				done:        make(chan struct{}),
 				output:      &strings.Builder{},
