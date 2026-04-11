@@ -80,7 +80,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `esc` | search | Clear search query and exit search mode |
 | `b` | normal | Toggle backlog (completed items) |
 | `f` | normal | Toggle focus on selected todo (focus = move to top; unfocus clears star+focus) |
-| `s` | normal | Toggle star on selected todo (star = starred+focused; unstar checks for calendar bookings) |
+| `s` | normal | Toggle star on selected todo (star = starred+focused+accepted; unstar checks for calendar bookings) |
 | `S` | normal | Schedule calendar block for selected todo (enters booking mode; auto-stars if not already starred) |
 | `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
@@ -175,7 +175,7 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 
 ### Schedule Offer Mode
 
-After a todo is starred (via the star key), `scheduleOfferMode` is set to `true` and a flash message appears:
+After a todo is starred (via the star key), it is also auto-accepted (status transitions from "new" to "backlog" via `AcceptTodo`, moving it from Inbox to Todo tab). Then `scheduleOfferMode` is set to `true` and a flash message appears:
 
 ```
 ★ <todo title> — Schedule time? S = yes, any key = skip
@@ -756,6 +756,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unstar confirm `n` unstars the todo in DB without touching calendar events
 - `f`, `s` operations call `notifyPeersCmd("data.refreshed")` for cross-instance sync
 - Starred todos sort before non-starred todos within any filtered view
+- Starring an inbox item (status "new") auto-accepts it via AcceptTodo, moving it from Inbox to Todo tab
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges

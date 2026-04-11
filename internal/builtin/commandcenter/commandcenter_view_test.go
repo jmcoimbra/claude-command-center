@@ -1626,3 +1626,32 @@ func TestView_DetailSessionSummaryRendersInlineCodeWithoutBackticks(t *testing.T
 	// Backticks should NOT be visible in the rendered output
 	viewNotContains(t, view, "`slack_send_message`")
 }
+
+func TestView_StarringInboxItemMovesToTodoTab(t *testing.T) {
+	// BUG-137: Starring an inbox item should accept it (new -> backlog),
+	// moving it from the Inbox tab to the Todo tab.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Triage me", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
+	})
+
+	// Expand and switch to inbox tab (todo -> inbox)
+	p.HandleKey(keyMsg(" "))
+	p.HandleKey(keyMsg("tab"))
+	inboxView := renderView(p)
+	viewContains(t, inboxView, "Inbox (1)")
+	viewContains(t, inboxView, "Triage me")
+
+	// Star the item while on the inbox tab
+	p.HandleKey(keyMsg("s"))
+
+	// The item's status should now be "backlog" (accepted), so it should
+	// no longer appear in the inbox tab — inbox count drops to 0, todo gains it.
+	inboxAfterStar := renderView(p)
+	viewContains(t, inboxAfterStar, "Inbox (0)")
+	viewContains(t, inboxAfterStar, "ToDo (1)")
+
+	// Switch to todo tab and verify the item appears there
+	p.triageFilter = "todo"
+	todoView := renderView(p)
+	viewContains(t, todoView, "Triage me")
+}

@@ -586,10 +586,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 						break
 					}
 				}
+				p.cc.AcceptTodo(todoID)
 				p.scheduleOfferMode = true
 				p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
 				p.flashMessageAt = time.Now()
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
+					if err := db.DBAcceptTodo(database, todoID); err != nil {
+						return err
+					}
 					return db.DBSetTodoStar(database, todoID, true)
 				})
 				tickCmd := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
