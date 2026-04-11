@@ -45,7 +45,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `addingTodoRich bool` — rich textarea for AI-powered todo creation
 - `bookingMode bool` — calendar event booking flow
 - `ccExpanded bool` — expanded multi-column todo view
-- `triageFilter string` — active triage filter tab in expanded view (default: "todo")
+- `triageFilter string` — active triage filter tab in expanded view (default: "focus")
 - `addingTodoQuick bool` — quick textarea for LLM-enriched todo creation
 - `gPending bool` — chord state: `g` was pressed, awaiting second key
 - `mergeSourceCursor int` — selected source index in synthesis todo detail view
@@ -248,14 +248,14 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 | Tab | Shows |
 |-----|-------|
 | focus | todos where `Focus == true` |
-| todo | `backlog` |
 | inbox | `new` |
 | agents | `enqueued`, `running`, `blocked` |
 | review | `review`, `failed` |
 | all | all non-terminal (everything except `completed`, `dismissed`) |
 
-- **Tab order**: focus, todo, inbox, agents, review, all
-- **Default tab**: todo
+- **Tab order**: focus, inbox, agents, review, all (ToDo removed — the home dashboard serves that purpose)
+- **Default tab**: focus
+- Pressing `space` from collapsed view expands into the todo list and lands on the Focus tab
 - `tab` cycles filter forward, `shift+tab` cycles backward
 - Switching tabs resets cursor and scroll offset to 0
 

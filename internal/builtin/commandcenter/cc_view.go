@@ -889,7 +889,7 @@ func renderTabBar(s *ccStyles, activeFilter string, counts map[string]int, width
 		label string
 	}
 	tabs := []tabDef{
-		{"todo", "ToDo"},
+		{"focus", "Focus"},
 		{"inbox", "Inbox"},
 		{"agents", "Agents"},
 		{"review", "Review"},

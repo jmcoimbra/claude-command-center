@@ -2242,10 +2242,10 @@ func TestBUG113_DownArrowAutoExpandsView(t *testing.T) {
 		t.Errorf("BUG-113 regression: expandedCols = %d, want 2", p.ccExpandedCols)
 	}
 
-	// Render expanded view — the expanded tab bar uses format "ToDo (N)"
-	// which uniquely identifies the expanded view.
+	// Render expanded view — the expanded tab bar uses format "All (N)"
+	// since auto-expand sets triageFilter to "all".
 	view := p.View(120, 30, 0)
-	expectedTab := fmt.Sprintf("ToDo (%d)", maxVisible+5)
+	expectedTab := fmt.Sprintf("All (%d)", maxVisible+5)
 	if !strings.Contains(view, expectedTab) {
 		t.Errorf("BUG-113 regression: expanded view should show tab bar with %q, but not found in rendered output", expectedTab)
 	}
@@ -2494,9 +2494,9 @@ func TestBUG124_AutoExpandSetsTriageFilterAll(t *testing.T) {
 	}
 	p.cc = &db.CommandCenter{GeneratedAt: time.Now(), Todos: todos}
 
-	// Verify default triageFilter is "todo" (which would show only backlog).
-	if p.triageFilter != "todo" {
-		t.Fatalf("expected default triageFilter 'todo', got %q", p.triageFilter)
+	// Verify default triageFilter is "focus" (BUG-138: focus is now the default tab).
+	if p.triageFilter != "focus" {
+		t.Fatalf("expected default triageFilter 'focus', got %q", p.triageFilter)
 	}
 
 	// Navigate down past visible area to trigger auto-expand.

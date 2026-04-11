@@ -202,7 +202,7 @@ type Plugin struct {
 func New() *Plugin {
 	return &Plugin{
 		subView:          "command",
-		triageFilter:     "todo",
+		triageFilter:     "focus",
 		wizardSelections: make(map[string]wizardSelection),
 	}
 }
