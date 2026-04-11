@@ -102,13 +102,6 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 	case releaseErrorMsg:
 		return p.handleReleaseError(msg)
 
-	case scheduleOfferTimeoutMsg:
-		if p.scheduleOfferMode {
-			p.scheduleOfferMode = false
-			p.flashMessage = ""
-		}
-		return false, plugin.NoopAction()
-
 	case claudeEditFinishedMsg:
 		return p.handleClaudeEditFinished(msg)
 
@@ -356,8 +349,15 @@ func (p *Plugin) handleDBWriteResult(msg dbWriteResult) (bool, plugin.Action) {
 }
 
 func (p *Plugin) handleBookingComplete(msg bookingCompleteMsg) (bool, plugin.Action) {
-	p.flashMessage = fmt.Sprintf("Booked %dm at %s", msg.duration, msg.startTime.Format("3:04pm"))
-	p.flashMessageAt = time.Now()
+	ack := fmt.Sprintf("Booked %dm at %s", msg.duration, msg.startTime.Format("3:04pm"))
+	if p.scheduleModalActive {
+		p.scheduleModalState = "booked"
+		p.scheduleModalLastBooking = ack
+		p.flashMessage = ""
+	} else {
+		p.flashMessage = ack
+		p.flashMessageAt = time.Now()
+	}
 	return true, plugin.NoopAction()
 }
 

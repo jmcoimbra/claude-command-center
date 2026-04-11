@@ -562,33 +562,36 @@ func TestHelpOverlay(t *testing.T) {
 	}
 }
 
-func TestBookingMode(t *testing.T) {
+func TestScheduleModal(t *testing.T) {
 	p := testPluginWithCC(t)
 
-	// S (shift+s) enters booking mode directly
+	// S (shift+s) opens schedule modal
 	p.HandleKey(keyMsg("S"))
-	if !p.bookingMode {
-		t.Error("S should enter booking mode")
+	if !p.scheduleModalActive {
+		t.Error("S should open schedule modal")
 	}
-	if p.bookingCursor != 2 {
-		t.Errorf("initial booking cursor = %d, want 2", p.bookingCursor)
+	if p.scheduleModalState != "picker" {
+		t.Errorf("modal state = %q, want picker", p.scheduleModalState)
 	}
-
-	// Navigate booking
-	p.HandleKey(keyMsg("l"))
-	if p.bookingCursor != 3 {
-		t.Errorf("after l: booking cursor = %d, want 3", p.bookingCursor)
+	if p.scheduleModalCursor != 2 {
+		t.Errorf("initial modal cursor = %d, want 2", p.scheduleModalCursor)
 	}
 
-	p.HandleKey(keyMsg("h"))
-	if p.bookingCursor != 2 {
-		t.Errorf("after h: booking cursor = %d, want 2", p.bookingCursor)
+	// Navigate modal with j/k (vertical)
+	p.HandleKey(keyMsg("j"))
+	if p.scheduleModalCursor != 3 {
+		t.Errorf("after j: modal cursor = %d, want 3", p.scheduleModalCursor)
+	}
+
+	p.HandleKey(keyMsg("k"))
+	if p.scheduleModalCursor != 2 {
+		t.Errorf("after k: modal cursor = %d, want 2", p.scheduleModalCursor)
 	}
 
 	// Esc cancels
 	p.HandleKey(specialKeyMsg(tea.KeyEsc))
-	if p.bookingMode {
-		t.Error("esc should cancel booking mode")
+	if p.scheduleModalActive {
+		t.Error("esc should close schedule modal")
 	}
 }
 
@@ -626,17 +629,15 @@ func TestStarKey(t *testing.T) {
 		t.Error("todo should be focused after starring")
 	}
 
-	// Should enter schedule offer mode
-	if !p.scheduleOfferMode {
-		t.Error("s on unstarred todo should enter scheduleOfferMode")
+	// Should open schedule modal
+	if !p.scheduleModalActive {
+		t.Error("s on unstarred todo should open schedule modal")
 	}
-
-	// Flash message should contain the star symbol and title
-	if !strings.Contains(p.flashMessage, "★") {
-		t.Errorf("flash message should contain ★, got %q", p.flashMessage)
+	if p.scheduleModalState != "picker" {
+		t.Errorf("schedule modal state = %q, want picker", p.scheduleModalState)
 	}
-	if !strings.Contains(p.flashMessage, todo.Title) {
-		t.Errorf("flash message should contain todo title %q, got %q", todo.Title, p.flashMessage)
+	if p.scheduleModalTodoID != todo.ID {
+		t.Errorf("schedule modal todo ID = %q, want %q", p.scheduleModalTodoID, todo.ID)
 	}
 }
 
@@ -651,7 +652,7 @@ func TestUnstarKey(t *testing.T) {
 			break
 		}
 	}
-	p.scheduleOfferMode = false // reset offer mode
+	p.scheduleModalActive = false // reset modal
 
 	// Now unstar it — no future bookings in test DB so should unstar immediately
 	action := p.HandleKey(keyMsg("s"))
@@ -672,9 +673,9 @@ func TestUnstarKey(t *testing.T) {
 		t.Errorf("flash message should contain 'Unstarred', got %q", p.flashMessage)
 	}
 
-	// Should NOT be in schedule offer mode
-	if p.scheduleOfferMode {
-		t.Error("unstarring should not enter scheduleOfferMode")
+	// Should NOT open schedule modal
+	if p.scheduleModalActive {
+		t.Error("unstarring should not open schedule modal")
 	}
 
 	// Should NOT be in unstar confirm mode (no future bookings)
@@ -730,14 +731,14 @@ func TestScheduleKey(t *testing.T) {
 	p := testPluginWithCC(t)
 	todo := p.cc.ActiveTodos()[0]
 
-	// S on unstarred todo: should enter booking mode and star the todo
+	// S on unstarred todo: should open schedule modal and star the todo
 	_ = p.HandleKey(keyMsg("S"))
 
-	if !p.bookingMode {
-		t.Error("S should enter booking mode")
+	if !p.scheduleModalActive {
+		t.Error("S should open schedule modal")
 	}
-	if p.bookingCursor != 2 {
-		t.Errorf("initial booking cursor = %d, want 2", p.bookingCursor)
+	if p.scheduleModalCursor != 2 {
+		t.Errorf("initial modal cursor = %d, want 2", p.scheduleModalCursor)
 	}
 
 	// Todo should be starred since it wasn't before
@@ -749,14 +750,38 @@ func TestScheduleKey(t *testing.T) {
 		t.Error("todo should be starred after S on unstarred todo")
 	}
 
-	// Esc cancels booking mode
+	// Esc cancels schedule modal
 	p.HandleKey(specialKeyMsg(tea.KeyEsc))
-	if p.bookingMode {
-		t.Error("esc should cancel booking mode")
+	if p.scheduleModalActive {
+		t.Error("esc should close schedule modal")
 	}
 }
 
-func TestScheduleOfferModeInterception(t *testing.T) {
+func TestScheduleModalFromStar(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	for i := range p.cc.Todos {
+		p.cc.Todos[i].Starred = false
+		p.cc.Todos[i].Focus = false
+	}
+	p.ccCursor = 0
+	todo := p.filteredTodos()[0]
+
+	// Star a todo — should immediately open schedule modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal after starring")
+	}
+	if p.scheduleModalState != "picker" {
+		t.Errorf("modal state = %q, want picker", p.scheduleModalState)
+	}
+	if p.scheduleModalTodoID != todo.ID {
+		t.Errorf("modal todo ID = %q, want %q", p.scheduleModalTodoID, todo.ID)
+	}
+}
+
+func TestScheduleModalEscDismisses(t *testing.T) {
 	p := testPluginWithCC(t)
 	p.ccExpanded = true
 	p.triageFilter = "all"
@@ -766,49 +791,22 @@ func TestScheduleOfferModeInterception(t *testing.T) {
 	}
 	p.ccCursor = 0
 
-	// Star a todo to enter offer mode
+	// Star a todo to open schedule modal
 	p.HandleKey(keyMsg("s"))
-	if !p.scheduleOfferMode {
-		t.Fatal("expected scheduleOfferMode after starring")
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal after starring")
 	}
 
-	// S key in offer mode should enter booking mode
-	p.HandleKey(keyMsg("S"))
-	if p.scheduleOfferMode {
-		t.Error("S in offer mode should exit offer mode")
-	}
-	if !p.bookingMode {
-		t.Error("S in offer mode should enter booking mode")
-	}
-}
-
-func TestScheduleOfferModeAnyKeySkips(t *testing.T) {
-	p := testPluginWithCC(t)
-	p.ccExpanded = true
-	p.triageFilter = "all"
-	for i := range p.cc.Todos {
-		p.cc.Todos[i].Starred = false
-		p.cc.Todos[i].Focus = false
-	}
-	p.ccCursor = 0
-
-	// Star a todo to enter offer mode
-	p.HandleKey(keyMsg("s"))
-	if !p.scheduleOfferMode {
-		t.Fatal("expected scheduleOfferMode after starring")
+	// Esc should dismiss modal
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Error("esc should dismiss schedule modal")
 	}
 
-	// Any other key should exit offer mode without entering booking mode
-	p.HandleKey(keyMsg("j"))
-	if p.scheduleOfferMode {
-		t.Error("any key in offer mode should exit offer mode")
-	}
-	if p.bookingMode {
-		t.Error("non-S key in offer mode should not enter booking mode")
-	}
-	// j should have moved the cursor
-	if p.ccCursor != 1 {
-		t.Errorf("j in offer mode should move cursor: cursor = %d, want 1", p.ccCursor)
+	// Todo should still be starred
+	updated := p.cc.FindTodo(p.filteredTodos()[0].ID)
+	if updated != nil && !updated.Starred {
+		t.Error("todo should remain starred after dismissing modal")
 	}
 }
 

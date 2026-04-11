@@ -69,19 +69,14 @@ func (p *Plugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 		return p.handleAddingTodoRich(msg)
 	}
 
-	// Schedule offer mode (after starring: S=schedule, other=skip)
-	if p.scheduleOfferMode {
-		return p.handleScheduleOffer(msg)
+	// Schedule modal (vertical duration picker / booking acknowledgment)
+	if p.scheduleModalActive {
+		return p.handleScheduleModal(msg)
 	}
 
 	// Unstar confirm mode (after unstarring with future bookings: y/n)
 	if p.unstarConfirmMode {
 		return p.handleUnstarConfirm(msg)
-	}
-
-	// Booking mode
-	if p.bookingMode {
-		return p.handleBooking(msg)
 	}
 
 	// Help toggle
@@ -589,19 +584,14 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					}
 				}
 				p.cc.AcceptTodo(todoID)
-				p.scheduleOfferMode = true
-				p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
-				p.flashMessageAt = time.Now()
+				p.openScheduleModal(todoID)
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					if err := db.DBAcceptTodo(database, todoID); err != nil {
 						return err
 					}
 					return db.DBSetTodoStar(database, todoID, true)
 				})
-				tickCmd := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-					return scheduleOfferTimeoutMsg{}
-				})
-				cmds := []tea.Cmd{dbCmd, tickCmd}
+				cmds := []tea.Cmd{dbCmd}
 				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 					cmds = append(cmds, notifyCmd)
 				}
@@ -643,12 +633,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		return plugin.NoopAction()
 
 	case "S":
-		// Schedule: enter booking mode (star if not already starred)
+		// Schedule: open schedule modal (star if not already starred)
 		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
 			todo := activeTodos[p.ccCursor]
 			todoID := todo.ID
-			p.bookingMode = true
-			p.bookingCursor = 2
+			p.openScheduleModal(todoID)
 			if !todo.Starred {
 				for i := range p.cc.Todos {
 					if p.cc.Todos[i].ID == todoID {
@@ -864,55 +853,67 @@ func (p *Plugin) handleAddingTodoQuick(msg tea.KeyMsg) plugin.Action {
 	return plugin.Action{Type: plugin.ActionNoop, TeaCmd: cmd}
 }
 
-func (p *Plugin) handleBooking(msg tea.KeyMsg) plugin.Action {
+// openScheduleModal opens the schedule modal for the given todo.
+func (p *Plugin) openScheduleModal(todoID string) {
+	p.scheduleModalActive = true
+	p.scheduleModalState = "picker"
+	p.scheduleModalCursor = 2 // default to 1h
+	p.scheduleModalTodoID = todoID
+	p.scheduleModalLastBooking = ""
+}
+
+func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
+	if p.scheduleModalState == "booked" {
+		switch msg.String() {
+		case "S":
+			// Schedule another block
+			p.scheduleModalState = "picker"
+			p.scheduleModalCursor = 2
+			return plugin.NoopAction()
+		case "esc":
+			p.scheduleModalActive = false
+			return plugin.NoopAction()
+		}
+		return plugin.NoopAction()
+	}
+
+	// Picker state
 	switch msg.String() {
-	case "left", "h":
-		if p.bookingCursor > 0 {
-			p.bookingCursor--
+	case "up", "k":
+		if p.scheduleModalCursor > 0 {
+			p.scheduleModalCursor--
 		}
 		return plugin.NoopAction()
 
-	case "right", "l":
-		if p.bookingCursor < len(bookingDurations)-1 {
-			p.bookingCursor++
+	case "down", "j":
+		if p.scheduleModalCursor < len(bookingDurations)-1 {
+			p.scheduleModalCursor++
 		}
 		return plugin.NoopAction()
 
 	case "enter":
-		activeTodos := p.cc.ActiveTodos()
-		if p.ccCursor < len(activeTodos) {
-			todo := activeTodos[p.ccCursor]
-			dur := bookingDurations[p.bookingCursor]
-			p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, todo.Title)
-			p.flashMessageAt = time.Now()
-			p.bookingMode = false
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: scheduleBlockCmd(p, todo.ID, todo.Title, dur)}
+		todoID := p.scheduleModalTodoID
+		dur := bookingDurations[p.scheduleModalCursor]
+		// Find the todo title
+		var title string
+		if p.cc != nil {
+			for _, t := range p.cc.Todos {
+				if t.ID == todoID {
+					title = t.Title
+					break
+				}
+			}
 		}
-		p.bookingMode = false
-		return plugin.NoopAction()
+		p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, title)
+		p.flashMessageAt = time.Now()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: scheduleBlockCmd(p, todoID, title, dur)}
 
 	case "esc":
-		p.bookingMode = false
+		p.scheduleModalActive = false
 		return plugin.NoopAction()
 	}
 
 	return plugin.NoopAction()
-}
-
-func (p *Plugin) handleScheduleOffer(msg tea.KeyMsg) plugin.Action {
-	p.scheduleOfferMode = false
-	p.flashMessage = ""
-	if msg.String() == "S" {
-		// Enter booking mode
-		activeTodos := p.filteredTodos()
-		if len(activeTodos) > 0 && p.ccCursor < len(activeTodos) {
-			p.bookingMode = true
-			p.bookingCursor = 2
-		}
-		return plugin.NoopAction()
-	}
-	// Any other key: exit offer mode and process key normally
-	return p.handleCommandTab(msg)
 }
 
 func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {

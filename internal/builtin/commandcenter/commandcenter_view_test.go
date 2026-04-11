@@ -1643,8 +1643,11 @@ func TestView_StarringInboxItemMovesToFocusTab(t *testing.T) {
 	viewContains(t, inboxView, "Inbox (1)")
 	viewContains(t, inboxView, "Triage me")
 
-	// Star the item while on the inbox tab
+	// Star the item while on the inbox tab — opens schedule modal
 	p.HandleKey(keyMsg("s"))
+
+	// Dismiss the schedule modal to see the underlying view
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
 
 	// The item's status should now be "backlog" (accepted) with Focus=true, so it should
 	// no longer appear in the inbox tab — inbox count drops to 0, focus gains it.
@@ -1767,9 +1770,9 @@ func TestView_BacklogHeaderShowsCount(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestView_StarToggleNoDuplicateLine(t *testing.T) {
-	// BUG-136: After pressing 's' to star a todo, the title must appear exactly
-	// once in the todo list area. The flash message adds a second occurrence of the
-	// title (without the display-ID number), so we check "153." appears only once.
+	// BUG-136: After pressing 's' to star a todo, the schedule modal overlay
+	// covers the view. The title should not appear duplicated. Dismissing the
+	// modal should show the todo list with the title appearing exactly once.
 	p := testPluginWithTodos(t, []db.Todo{
 		{ID: "t1", Title: "Build the Thanx Security Plugin", DisplayID: 153, Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
 	})
@@ -1778,19 +1781,22 @@ func TestView_StarToggleNoDuplicateLine(t *testing.T) {
 	p.triageFilter = "all"
 	p.ccCursor = 0
 
-	// Press 's' to star
+	// Press 's' to star — opens schedule modal
 	p.HandleKey(keyMsg("s"))
 
 	view := renderView(p)
+	// Schedule modal should be present
+	viewContains(t, view, "Schedule time block")
 
-	// "153." must appear exactly once — it only lives in the todo list, not the flash.
+	// Dismiss the modal
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+
+	view = renderView(p)
+	// "153." must appear exactly once — no duplicate
 	numCount := strings.Count(view, "153.")
 	if numCount != 1 {
-		t.Errorf("after starring: expected '153.' exactly 1 time, got %d\nView:\n%s", numCount, view)
+		t.Errorf("after dismissing modal: expected '153.' exactly 1 time, got %d\nView:\n%s", numCount, view)
 	}
-
-	// The flash message should be present (schedule offer)
-	viewContains(t, view, "Schedule time")
 }
 
 func TestView_StarToggleExpandedTitleMaxWidth(t *testing.T) {
@@ -2057,4 +2063,234 @@ func TestView_FocusTabWithCount(t *testing.T) {
 	p.HandleKey(keyMsg(" "))
 	view := renderView(p)
 	viewContains(t, view, "Focus (2)")
+}
+
+// ---------------------------------------------------------------------------
+// Schedule Modal View Tests (BUG-134)
+// ---------------------------------------------------------------------------
+
+func TestView_ScheduleModalPickerRendering(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Schedule me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star the todo to open schedule modal
+	p.HandleKey(keyMsg("s"))
+
+	view := renderView(p)
+
+	// Modal should contain title and duration options
+	viewContains(t, view, "Schedule time block")
+	viewContains(t, view, "15m")
+	viewContains(t, view, "30m")
+	viewContains(t, view, "1h")
+	viewContains(t, view, "2h")
+	viewContains(t, view, "4h")
+
+	// Hint text should be present
+	viewContains(t, view, "j/k nav")
+	viewContains(t, view, "enter select")
+	viewContains(t, view, "esc")
+}
+
+func TestView_ScheduleModalCursorNavigation(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Navigate me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal — cursor starts at index 2 (1h)
+	p.HandleKey(keyMsg("s"))
+	if p.scheduleModalCursor != 2 {
+		t.Fatalf("initial cursor = %d, want 2", p.scheduleModalCursor)
+	}
+
+	// Move up to 30m
+	p.HandleKey(keyMsg("k"))
+	if p.scheduleModalCursor != 1 {
+		t.Errorf("after k: cursor = %d, want 1", p.scheduleModalCursor)
+	}
+
+	// Move up to 15m
+	p.HandleKey(keyMsg("k"))
+	if p.scheduleModalCursor != 0 {
+		t.Errorf("after k: cursor = %d, want 0", p.scheduleModalCursor)
+	}
+
+	// Can't go above 0
+	p.HandleKey(keyMsg("k"))
+	if p.scheduleModalCursor != 0 {
+		t.Errorf("at top, cursor should stay at 0, got %d", p.scheduleModalCursor)
+	}
+
+	// Move down to end
+	p.HandleKey(keyMsg("j"))
+	p.HandleKey(keyMsg("j"))
+	p.HandleKey(keyMsg("j"))
+	p.HandleKey(keyMsg("j"))
+	if p.scheduleModalCursor != 4 {
+		t.Errorf("at bottom: cursor = %d, want 4", p.scheduleModalCursor)
+	}
+
+	// Can't go below 4
+	p.HandleKey(keyMsg("j"))
+	if p.scheduleModalCursor != 4 {
+		t.Errorf("at bottom, cursor should stay at 4, got %d", p.scheduleModalCursor)
+	}
+}
+
+func TestView_ScheduleModalEscFromPicker(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Dismiss me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("modal should be open")
+	}
+
+	// Esc dismisses without scheduling
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Error("esc should close the modal")
+	}
+
+	// View should now show the todo list, not the modal
+	view := renderView(p)
+	viewNotContains(t, view, "Schedule time block")
+	viewContains(t, view, "Dismiss me")
+}
+
+func TestView_ScheduleModalBookedState(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Book me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+
+	// Simulate a booking completion
+	p.HandleMessage(bookingCompleteMsg{
+		todoID:    "t1",
+		startTime: time.Date(2026, 4, 11, 14, 30, 0, 0, time.Local),
+		endTime:   time.Date(2026, 4, 11, 15, 30, 0, 0, time.Local),
+		duration:  60,
+	})
+
+	// Modal should be in "booked" state
+	if p.scheduleModalState != "booked" {
+		t.Fatalf("modal state = %q, want booked", p.scheduleModalState)
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "Booked 60m at 2:30pm")
+	viewContains(t, view, "schedule another block")
+}
+
+func TestView_ScheduleModalBookedEscDismisses(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Ack me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star and simulate booking
+	p.HandleKey(keyMsg("s"))
+	p.HandleMessage(bookingCompleteMsg{
+		todoID:    "t1",
+		startTime: time.Date(2026, 4, 11, 14, 0, 0, 0, time.Local),
+		endTime:   time.Date(2026, 4, 11, 14, 30, 0, 0, time.Local),
+		duration:  30,
+	})
+
+	// In booked state, esc should dismiss
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Error("esc in booked state should close the modal")
+	}
+}
+
+func TestView_ScheduleModalBookedSSchedulesAnother(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Another me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star and simulate booking
+	p.HandleKey(keyMsg("s"))
+	p.HandleMessage(bookingCompleteMsg{
+		todoID:    "t1",
+		startTime: time.Date(2026, 4, 11, 10, 0, 0, 0, time.Local),
+		endTime:   time.Date(2026, 4, 11, 10, 15, 0, 0, time.Local),
+		duration:  15,
+	})
+
+	if p.scheduleModalState != "booked" {
+		t.Fatalf("modal state = %q, want booked", p.scheduleModalState)
+	}
+
+	// Press S to schedule another block
+	p.HandleKey(keyMsg("S"))
+
+	if p.scheduleModalState != "picker" {
+		t.Errorf("after S: modal state = %q, want picker", p.scheduleModalState)
+	}
+	if !p.scheduleModalActive {
+		t.Error("modal should still be active")
+	}
+
+	// View should show the picker again
+	view := renderView(p)
+	viewContains(t, view, "Schedule time block")
+}
+
+func TestView_ScheduleModalFromSKey(t *testing.T) {
+	// S key (shift) should open modal directly
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Direct schedule", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	p.HandleKey(keyMsg("S"))
+
+	if !p.scheduleModalActive {
+		t.Error("S should open schedule modal")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "Schedule time block")
+}
+
+func TestView_ScheduleModalCollapsedView(t *testing.T) {
+	// Modal should also work in collapsed view
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Collapsed modal", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+
+	p.HandleKey(keyMsg("S"))
+
+	if !p.scheduleModalActive {
+		t.Error("S should open schedule modal in collapsed view")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "Schedule time block")
+	viewContains(t, view, "1h")
 }

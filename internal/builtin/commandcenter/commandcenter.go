@@ -77,9 +77,14 @@ type Plugin struct {
 	ccExpandedCols   int // 0 = use default (2), 1 = single column, 2 = two columns
 	ccExpandedOffset int
 
+	// Schedule modal overlay
+	scheduleModalActive      bool
+	scheduleModalState       string // "picker" or "booked"
+	scheduleModalCursor      int
+	scheduleModalTodoID      string
+	scheduleModalLastBooking string
+
 	// Input modes
-	bookingMode   bool
-	bookingCursor int
 	textInput     textinput.Model
 
 	// Detail view
@@ -178,8 +183,7 @@ type Plugin struct {
 	// Key chord state: "g" prefix for Gmail-style shortcuts (e.g., "gi" = go inbox)
 	gPending bool
 
-	// Star / focus / schedule offer modes
-	scheduleOfferMode     bool   // after starring: intercepts next keypress (S=schedule, other=skip)
+	// Star / focus / unstar confirm modes
 	unstarConfirmMode     bool   // after unstarring with future bookings: intercepts y/n
 	unstarConfirmTodoID   string // which todo is pending unstar confirmation
 	unstarConfirmAlsoUnfocus bool // true when confirm was triggered from f-key (should also clear focus)
@@ -867,6 +871,9 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 			filterHint := p.styles.Hint.Render("  / to edit \u00b7 esc to clear")
 			view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterLabel+filterHint)
 		}
+		if p.scheduleModalActive {
+			view = p.renderScheduleModal(view, viewWidth, viewHeight)
+		}
 		return view
 	}
 
@@ -889,8 +896,8 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		inputLine := p.styles.SectionHeader.Render("COMMAND (ctrl+d submit, esc cancel):") + "\n" + p.todoTextArea.View()
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", inputLine)
 	}
-	if p.bookingMode {
-		view = lipgloss.JoinVertical(lipgloss.Left, view, "", p.renderBookingPicker())
+	if p.scheduleModalActive {
+		view = p.renderScheduleModal(view, viewWidth, viewHeight)
 	}
 	if p.searchActive {
 		searchLine := p.styles.SectionHeader.Render("/") + " " + p.searchInput.View() + "  " + p.styles.Hint.Render("enter keep filter \u00b7 esc clear")
@@ -904,18 +911,47 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 	return view
 }
 
-func (p *Plugin) renderBookingPicker() string {
+func (p *Plugin) renderScheduleModal(baseView string, viewWidth, viewHeight int) string {
 	labels := []string{"15m", "30m", "1h", "2h", "4h"}
-	var parts []string
-	for i, label := range labels {
-		if i == p.bookingCursor {
-			parts = append(parts, p.styles.ActiveTab.Render("> "+label))
-		} else {
-			parts = append(parts, p.styles.InactiveTab.Render(label))
+
+	var body string
+	if p.scheduleModalState == "booked" {
+		// Acknowledgment state
+		ackLine := lipgloss.NewStyle().Foreground(p.styles.ColorGreen).Bold(true).Render(p.scheduleModalLastBooking)
+		hint := p.styles.Hint.Render("S = schedule another block · Esc = done")
+		body = lipgloss.JoinVertical(lipgloss.Left, "", "  "+ackLine, "", "  "+hint, "")
+	} else {
+		// Picker state
+		title := p.styles.SectionHeader.Render("Schedule time block")
+		var rows []string
+		rows = append(rows, "", "  "+title, "")
+		for i, label := range labels {
+			if i == p.scheduleModalCursor {
+				row := lipgloss.NewStyle().Foreground(p.styles.ColorCyan).Bold(true).Render("  > " + label)
+				rows = append(rows, row)
+			} else {
+				row := lipgloss.NewStyle().Foreground(p.styles.ColorMuted).Render("    " + label)
+				rows = append(rows, row)
+			}
 		}
+		hint := p.styles.Hint.Render("j/k nav · enter select · esc cancel")
+		rows = append(rows, "", "  "+hint, "")
+		body = lipgloss.JoinVertical(lipgloss.Left, rows...)
 	}
-	picker := strings.Join(parts, "  ")
-	return p.styles.SectionHeader.Render("Book time: ") + picker + p.styles.Hint.Render("  (<-> select, enter confirm, esc cancel)")
+
+	// Build modal box with border
+	modalWidth := 38
+	modal := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(p.styles.ColorCyan).
+		Width(modalWidth).
+		Padding(0, 1).
+		Render(body)
+
+	// Center the modal over the base view
+	return lipgloss.Place(viewWidth, viewHeight+14, lipgloss.Center, lipgloss.Center, modal,
+		lipgloss.WithWhitespaceChars(" "),
+		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
 }
 
 // publishEvent is a helper for publishing events to the bus.

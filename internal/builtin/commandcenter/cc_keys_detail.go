@@ -112,10 +112,9 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 		}
 		return plugin.ConsumedAction()
 	case "S":
-		// Schedule — enter booking mode
+		// Schedule — open schedule modal
 		if todo := p.detailTodo(); todo != nil {
-			p.bookingMode = true
-			p.bookingCursor = 2
+			p.openScheduleModal(todo.ID)
 		}
 		return plugin.ConsumedAction()
 	case "j":
@@ -831,16 +830,11 @@ func (p *Plugin) handleDetailStarToggle(todo *db.Todo) plugin.Action {
 				break
 			}
 		}
-		p.scheduleOfferMode = true
-		p.flashMessage = "★ " + todo.Title + " — Schedule time? S = yes, any key = skip"
-		p.flashMessageAt = time.Now()
+		p.openScheduleModal(todoID)
 		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 			return db.DBSetTodoStar(database, todoID, true)
 		})
-		tickCmd := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-			return scheduleOfferTimeoutMsg{}
-		})
-		cmds := []tea.Cmd{dbCmd, tickCmd}
+		cmds := []tea.Cmd{dbCmd}
 		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 			cmds = append(cmds, notifyCmd)
 		}
