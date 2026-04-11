@@ -320,20 +320,21 @@ func migrateSchema(db *sql.DB) error {
 	_, _ = db.Exec(`DROP INDEX IF EXISTS idx_cc_todos_source_ref`)
 	_, _ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_todos_source_ref ON cc_todos(source_ref) WHERE source_ref IS NOT NULL AND source_ref != '' AND deleted_at IS NULL`)
 
-	// Focus & Star priority system: add focus and starred columns to todos
+	// Focus & star priority system
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN focus INTEGER NOT NULL DEFAULT 0`)
 	_, _ = db.Exec(`ALTER TABLE cc_todos ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`)
 
-	// Booking tracking table: records Google Calendar events booked for todos
+	// Booking table: tracks Google Calendar events scheduled for todos
 	_, _ = db.Exec(`CREATE TABLE IF NOT EXISTS cc_todo_bookings (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		todo_id TEXT NOT NULL,
-		calendar_event_id TEXT NOT NULL,
-		start_time TEXT NOT NULL,
-		duration_minutes INTEGER NOT NULL,
-		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		todo_id      TEXT NOT NULL,
+		event_id     TEXT NOT NULL,
+		start_time   TEXT NOT NULL,
+		end_time     TEXT NOT NULL,
+		duration_min INTEGER NOT NULL DEFAULT 0,
+		created_at   TEXT NOT NULL
 	)`)
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_cc_todo_bookings_todo_id ON cc_todo_bookings(todo_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_todo_bookings_todo_id ON cc_todo_bookings(todo_id)`)
 
 	return nil
 }

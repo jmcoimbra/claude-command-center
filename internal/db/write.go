@@ -14,7 +14,7 @@ import (
 
 func DBCompleteTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?`,
+	_, err := db.Exec(`UPDATE cc_todos SET status = 'completed', completed_at = ?, updated_at = ?, focus = 0, starred = 0 WHERE id = ?`,
 		now, now, id)
 	if err != nil {
 		return fmt.Errorf("complete todo %s: %w", id, err)
@@ -24,7 +24,7 @@ func DBCompleteTodo(db *sql.DB, id string) error {
 
 func DBDismissTodo(db *sql.DB, id string) error {
 	now := FormatTime(time.Now())
-	_, err := db.Exec(`UPDATE cc_todos SET status = 'dismissed', updated_at = ? WHERE id = ?`, now, id)
+	_, err := db.Exec(`UPDATE cc_todos SET status = 'dismissed', updated_at = ?, focus = 0, starred = 0 WHERE id = ?`, now, id)
 	if err != nil {
 		return fmt.Errorf("dismiss todo %s: %w", id, err)
 	}
@@ -204,45 +204,78 @@ func DBUpdateTodoSourceContext(db *sql.DB, id, sourceContext, sourceContextAt st
 }
 
 // ---------------------------------------------------------------------------
-// Write methods -- Focus & Star
+// Write methods -- Focus & Star priority
 // ---------------------------------------------------------------------------
 
-// DBSetTodoStar sets the starred field (and focus=true when starring) on a todo.
-// Stub: not yet implemented — will update starred and focus columns.
-func DBSetTodoStar(db *sql.DB, id string, starred bool) error {
-	// Stub
+// DBSetTodoStar sets the starred flag on a todo.
+// Starring also sets focus=1 (starred items are implicitly focused).
+// Unstarring (starred=false) clears only the starred flag; focus is unchanged.
+func DBSetTodoStar(db *sql.DB, todoID string, starred bool) error {
+	now := FormatTime(time.Now())
+	var err error
+	if starred {
+		_, err = db.Exec(`UPDATE cc_todos SET starred = 1, focus = 1, updated_at = ? WHERE id = ?`, now, todoID)
+	} else {
+		_, err = db.Exec(`UPDATE cc_todos SET starred = 0, updated_at = ? WHERE id = ?`, now, todoID)
+	}
+	if err != nil {
+		return fmt.Errorf("set todo star %s: %w", todoID, err)
+	}
 	return nil
 }
 
-// DBSetTodoFocus sets the focus field on a todo.
-// Stub: not yet implemented — will update focus column.
-func DBSetTodoFocus(db *sql.DB, id string, focus bool) error {
-	// Stub
+// DBSetTodoFocus sets the focus flag on a todo.
+// Focusing sets focus=1. Unfocusing sets focus=0 AND starred=0
+// (a todo cannot be starred without being focused).
+func DBSetTodoFocus(db *sql.DB, todoID string, focus bool) error {
+	now := FormatTime(time.Now())
+	var err error
+	if focus {
+		_, err = db.Exec(`UPDATE cc_todos SET focus = 1, updated_at = ? WHERE id = ?`, now, todoID)
+	} else {
+		_, err = db.Exec(`UPDATE cc_todos SET focus = 0, starred = 0, updated_at = ? WHERE id = ?`, now, todoID)
+	}
+	if err != nil {
+		return fmt.Errorf("set todo focus %s: %w", todoID, err)
+	}
 	return nil
 }
 
-// DBClearStarAndFocus clears both starred and focus on a todo (used on complete/dismiss).
-// Stub: not yet implemented.
-func DBClearStarAndFocus(db *sql.DB, id string) error {
-	// Stub
+// DBClearStarAndFocus clears both star and focus flags on a todo.
+// Used when completing or dismissing a todo.
+func DBClearStarAndFocus(db *sql.DB, todoID string) error {
+	now := FormatTime(time.Now())
+	_, err := db.Exec(`UPDATE cc_todos SET focus = 0, starred = 0, updated_at = ? WHERE id = ?`, now, todoID)
+	if err != nil {
+		return fmt.Errorf("clear star and focus %s: %w", todoID, err)
+	}
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Write methods -- Bookings
-// ---------------------------------------------------------------------------
-
-// DBInsertBooking inserts a new booking record for a todo.
-// Stub: not yet implemented.
-func DBInsertBooking(db *sql.DB, b TodoBooking) error {
-	// Stub
+// DBInsertBooking inserts a new calendar booking record for a todo.
+func DBInsertBooking(db *sql.DB, booking TodoBooking) error {
+	now := FormatTime(time.Now())
+	createdAt := now
+	if !booking.CreatedAt.IsZero() {
+		createdAt = FormatTime(booking.CreatedAt)
+	}
+	_, err := db.Exec(`INSERT INTO cc_todo_bookings (todo_id, event_id, start_time, end_time, duration_min, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		booking.TodoID, booking.EventID,
+		FormatTime(booking.StartTime), FormatTime(booking.EndTime),
+		booking.DurationMin, createdAt)
+	if err != nil {
+		return fmt.Errorf("insert booking for todo %s: %w", booking.TodoID, err)
+	}
 	return nil
 }
 
-// DBDeleteFutureBookings deletes all future booking records for a todo.
-// Stub: not yet implemented.
+// DBDeleteFutureBookings deletes all future bookings for a given todo.
 func DBDeleteFutureBookings(db *sql.DB, todoID string) error {
-	// Stub
+	_, err := db.Exec(`DELETE FROM cc_todo_bookings WHERE todo_id = ? AND start_time > strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`, todoID)
+	if err != nil {
+		return fmt.Errorf("delete future bookings for todo %s: %w", todoID, err)
+	}
 	return nil
 }
 

@@ -205,14 +205,15 @@ type Todo struct {
 	MergeInto      string     `json:"-"` // transient — not persisted to DB
 }
 
-// TodoBooking represents a Google Calendar event booked for a todo.
+// TodoBooking tracks a Google Calendar event that was scheduled for a todo.
 type TodoBooking struct {
-	ID              int64     `json:"id"`
-	TodoID          string    `json:"todo_id"`
-	CalendarEventID string    `json:"calendar_event_id"`
-	StartTime       time.Time `json:"start_time"`
-	DurationMinutes int       `json:"duration_minutes"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	TodoID      string    `json:"todo_id"`
+	EventID     string    `json:"event_id"`     // Google Calendar event ID
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	DurationMin int       `json:"duration_min"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // TodoMerge tracks which original todos have been merged into a synthesis todo.
