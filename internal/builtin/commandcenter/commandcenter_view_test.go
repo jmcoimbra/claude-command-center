@@ -1655,3 +1655,107 @@ func TestView_StarringInboxItemMovesToTodoTab(t *testing.T) {
 	todoView := renderView(p)
 	viewContains(t, todoView, "Triage me")
 }
+
+// ---------------------------------------------------------------------------
+// Backlog Toggle (BUG-135)
+// ---------------------------------------------------------------------------
+
+func TestView_BacklogToggleShowsCompletedItems(t *testing.T) {
+	now := time.Now()
+	doneAt := now.Add(-time.Hour)
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Active task alpha", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t2", Title: "Completed task bravo", Status: db.StatusCompleted, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+		{ID: "t3", Title: "Dismissed task charlie", Status: db.StatusDismissed, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+	})
+
+	// Before toggle: active items visible, completed not in main list
+	view := renderView(p)
+	viewContains(t, view, "Active task alpha")
+	viewContains(t, view, "TODOS")
+
+	// Toggle backlog on
+	p.HandleKey(keyMsg("b"))
+	if !p.showBacklog {
+		t.Fatal("b should set showBacklog to true")
+	}
+
+	view = renderView(p)
+	// Completed items should be visible
+	viewContains(t, view, "Completed task bravo")
+	viewContains(t, view, "Dismissed task charlie")
+	// Active items should NOT be in the backlog view
+	viewNotContains(t, view, "Active task alpha")
+	// Header should say BACKLOG
+	viewContains(t, view, "BACKLOG")
+}
+
+func TestView_BacklogToggleBack(t *testing.T) {
+	now := time.Now()
+	doneAt := now.Add(-time.Hour)
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Active task delta", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t2", Title: "Completed task echo", Status: db.StatusCompleted, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+	})
+
+	// Toggle on then off
+	p.HandleKey(keyMsg("b"))
+	p.HandleKey(keyMsg("b"))
+	if p.showBacklog {
+		t.Fatal("second b should toggle showBacklog back to false")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "Active task delta")
+	viewContains(t, view, "TODOS")
+	viewNotContains(t, view, "BACKLOG")
+}
+
+func TestView_BacklogToggleResetsCursor(t *testing.T) {
+	now := time.Now()
+	doneAt := now.Add(-time.Hour)
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "First active", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t2", Title: "Second active", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t3", Title: "Done item", Status: db.StatusCompleted, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+	})
+
+	// Move cursor down
+	p.HandleKey(keyMsg("j"))
+	if p.ccCursor != 1 {
+		t.Fatalf("expected cursor at 1, got %d", p.ccCursor)
+	}
+
+	// Toggle backlog — cursor should reset to 0
+	p.HandleKey(keyMsg("b"))
+	if p.ccCursor != 0 {
+		t.Fatalf("expected cursor reset to 0 after backlog toggle, got %d", p.ccCursor)
+	}
+}
+
+func TestView_BacklogEmptyState(t *testing.T) {
+	now := time.Now()
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Only active", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+	})
+
+	// Toggle backlog on — no completed items
+	p.HandleKey(keyMsg("b"))
+	view := renderView(p)
+	viewContains(t, view, "BACKLOG (0 completed)")
+	viewContains(t, view, "No completed items")
+}
+
+func TestView_BacklogHeaderShowsCount(t *testing.T) {
+	now := time.Now()
+	doneAt := now.Add(-time.Hour)
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Active one", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
+		{ID: "t2", Title: "Done one", Status: db.StatusCompleted, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+		{ID: "t3", Title: "Done two", Status: db.StatusDismissed, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
+	})
+
+	p.HandleKey(keyMsg("b"))
+	view := renderView(p)
+	viewContains(t, view, "BACKLOG (2 completed)")
+}

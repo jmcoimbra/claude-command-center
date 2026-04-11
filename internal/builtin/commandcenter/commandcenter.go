@@ -576,10 +576,31 @@ func (p *Plugin) expandedNumCols() int {
 }
 
 // filteredTodos returns the subset of todos based on the current view mode, triage filter, and search query.
+// When showBacklog is true, returns completed/dismissed items instead of active ones.
 func (p *Plugin) filteredTodos() []db.Todo {
 	if p.cc == nil {
 		return nil
 	}
+
+	// Backlog mode: return completed/dismissed items (with search filter).
+	if p.showBacklog {
+		result := p.cc.CompletedTodos()
+		query := strings.TrimSpace(p.searchInput.Value())
+		if query == "" {
+			return result
+		}
+		lower := strings.ToLower(query)
+		var filtered []db.Todo
+		for _, t := range result {
+			titleMatch := strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower)
+			idMatch := query == fmt.Sprintf("%d", t.DisplayID)
+			if titleMatch || idMatch {
+				filtered = append(filtered, t)
+			}
+		}
+		return filtered
+	}
+
 	allActive := p.cc.ActiveTodos()
 
 	var result []db.Todo

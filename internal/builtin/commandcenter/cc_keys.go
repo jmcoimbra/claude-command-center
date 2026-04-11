@@ -570,6 +570,8 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 
 	case "b":
 		p.showBacklog = !p.showBacklog
+		p.ccCursor = 0
+		p.ccScrollOffset = 0
 		return plugin.NoopAction()
 
 	case "s":

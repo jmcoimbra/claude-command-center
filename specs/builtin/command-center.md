@@ -743,7 +743,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Defer (d) moves todo to bottom
 - Promote (p) moves todo to top
 - Shift+up/down swaps todo with neighbor, persists via DB sort_order swap (transaction-based)
-- Toggle backlog (b) shows/hides completed items
+- Toggle backlog (b) switches the primary todo list between active and completed/dismissed items; when active, `filteredTodos()` returns `CompletedTodos()` and the panel header shows "BACKLOG (N completed)" instead of "TODOS (N active)"; pressing `b` again returns to the active view; cursor resets to 0 on toggle
 - Booking mode enter/exit and duration selection
 - Calendar event line (time + title + duration) fits on a single line within the panel border — duration does not wrap to a new line
 - View renders without panic (with and without data)
