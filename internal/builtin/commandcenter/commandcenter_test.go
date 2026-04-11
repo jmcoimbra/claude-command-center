@@ -3023,3 +3023,64 @@ func TestBUG147_StarsSurviveRestart(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// BUG-149: handleClaudeEditFinished preserves SessionLogPath
+// ---------------------------------------------------------------------------
+
+func TestHandleClaudeEditFinished_PreservesSessionLogPath(t *testing.T) {
+	p := testPlugin(t)
+	p.cc = &db.CommandCenter{
+		GeneratedAt: time.Now(),
+		Todos: []db.Todo{
+			{
+				ID:             "t1",
+				Title:          "Original title",
+				Status:         db.StatusReview,
+				Source:         "manual",
+				CreatedAt:      time.Now(),
+				SessionID:      "sess-abc",
+				SessionSummary: "Did some work",
+				SessionLogPath: "/tmp/logs/sess-abc.jsonl",
+				DisplayID:      42,
+			},
+		},
+	}
+
+	// Simulate LLM returning an edit that changes only the title.
+	editJSON := `{"title": "Updated title", "status": "review", "source": "manual"}`
+	handled, _ := p.HandleMessage(claudeEditFinishedMsg{
+		todoID: "t1",
+		output: editJSON,
+	})
+	if !handled {
+		t.Fatal("claudeEditFinishedMsg should be handled")
+	}
+
+	// Find the updated todo in memory.
+	var found *db.Todo
+	for i := range p.cc.Todos {
+		if p.cc.Todos[i].ID == "t1" {
+			found = &p.cc.Todos[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("todo t1 not found after edit")
+	}
+	if found.Title != "Updated title" {
+		t.Errorf("title should be updated, got %q", found.Title)
+	}
+	if found.SessionLogPath != "/tmp/logs/sess-abc.jsonl" {
+		t.Errorf("SessionLogPath should be preserved, got %q", found.SessionLogPath)
+	}
+	if found.SessionID != "sess-abc" {
+		t.Errorf("SessionID should be preserved, got %q", found.SessionID)
+	}
+	if found.SessionSummary != "Did some work" {
+		t.Errorf("SessionSummary should be preserved, got %q", found.SessionSummary)
+	}
+	if found.DisplayID != 42 {
+		t.Errorf("DisplayID should be preserved, got %d", found.DisplayID)
+	}
+}

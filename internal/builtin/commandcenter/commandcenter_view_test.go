@@ -2718,3 +2718,47 @@ func TestView_BUG146_BookedStateConsumesAllKeys(t *testing.T) {
 		t.Error("modal should be dismissed")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// BUG-149: SessionLogPath preservation
+// ---------------------------------------------------------------------------
+
+func TestView_DetailHintShowsWLogWhenSessionLogPathSet(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Completed agent task",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			SessionLogPath: "/tmp/logs/sess-abc.jsonl",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := p.View(120, 40, 0)
+	viewContains(t, view, "w log")
+}
+
+func TestView_DetailHintNoWLogWhenSessionLogPathEmpty(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:        "t1",
+			Title:     "No log task",
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+			Starred:   true,
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := p.View(120, 40, 0)
+	viewNotContains(t, view, "w log")
+	viewNotContains(t, view, "w watch")
+}

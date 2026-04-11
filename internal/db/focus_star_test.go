@@ -373,3 +373,89 @@ func TestRefreshPreservesFocusStar(t *testing.T) {
 		t.Errorf("title should be updated, got %q", t1.Title)
 	}
 }
+
+func TestRefreshPreservesSessionFields(t *testing.T) {
+	dir := t.TempDir()
+	database, err := OpenDB(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now()
+
+	// Initial refresh: insert a todo.
+	cc := &CommandCenter{
+		GeneratedAt: now,
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	// Daemon sets session fields on the todo (simulating agent.started + agent.finished).
+	if err := DBUpdateTodoSessionID(database, "t1", "sess-abc"); err != nil {
+		t.Fatalf("update session_id: %v", err)
+	}
+	if err := DBUpdateTodoSessionSummary(database, "t1", "Fixed the bug"); err != nil {
+		t.Fatalf("update session_summary: %v", err)
+	}
+	// Simulate setting session_log_path via a direct UPDATE (matches agent_runner behavior).
+	_, err = database.Exec(`UPDATE cc_todos SET session_log_path = ? WHERE id = ?`,
+		"/tmp/logs/sess-abc.jsonl", "t1")
+	if err != nil {
+		t.Fatalf("update session_log_path: %v", err)
+	}
+
+	// Verify they were set.
+	before, err := DBLoadTodoByID(database, "t1")
+	if err != nil {
+		t.Fatalf("load before refresh: %v", err)
+	}
+	if before.SessionID != "sess-abc" {
+		t.Fatalf("precondition: session_id should be set, got %q", before.SessionID)
+	}
+	if before.SessionLogPath != "/tmp/logs/sess-abc.jsonl" {
+		t.Fatalf("precondition: session_log_path should be set, got %q", before.SessionLogPath)
+	}
+
+	// Simulate a second refresh with the same todo (title updated, session fields empty — refresh doesn't produce them).
+	cc2 := &CommandCenter{
+		GeneratedAt: now.Add(time.Minute),
+		Todos: []Todo{
+			{ID: "t1", Title: "Todo one (updated)", Status: StatusBacklog, Source: "github", CreatedAt: now},
+		},
+	}
+	if err := DBSaveRefreshResult(database, cc2); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+
+	// Session fields should survive the refresh.
+	loaded, err := LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load after refresh: %v", err)
+	}
+	var t1 *Todo
+	for i := range loaded.Todos {
+		if loaded.Todos[i].ID == "t1" {
+			t1 = &loaded.Todos[i]
+		}
+	}
+	if t1 == nil {
+		t.Fatal("t1 not found after second refresh")
+	}
+	if t1.SessionID != "sess-abc" {
+		t.Errorf("session_id should be preserved across refresh, got %q", t1.SessionID)
+	}
+	if t1.SessionSummary != "Fixed the bug" {
+		t.Errorf("session_summary should be preserved across refresh, got %q", t1.SessionSummary)
+	}
+	if t1.SessionLogPath != "/tmp/logs/sess-abc.jsonl" {
+		t.Errorf("session_log_path should be preserved across refresh, got %q", t1.SessionLogPath)
+	}
+	if t1.Title != "Todo one (updated)" {
+		t.Errorf("title should be updated, got %q", t1.Title)
+	}
+}

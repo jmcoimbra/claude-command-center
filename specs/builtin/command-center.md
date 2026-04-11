@@ -317,6 +317,7 @@ Title max-width is reduced by 2 to account for the star prefix character. Both c
 - `c` key opens rich textarea; `ctrl+d` submits text to Claude LLM for todo creation
 - **Command LLM delegation:** When the command LLM determines an instruction requires external data (Granola transcripts, Slack messages, emails, files, GitHub PRs) or real work it cannot perform, it returns a `delegate` field. The handler creates a todo from the delegate prompt, sets its detail and project directory, and launches an agent session to do the real work. Ask takes priority over delegation; both delegation and simple todos can be processed in the same response.
 - `space` on todo opens detail view with edit input for Claude-powered enrichment
+- **LLM edit field preservation:** When the LLM edits a todo (`handleClaudeEditFinished`), system-managed fields are preserved from the existing todo: `ID`, `CreatedAt`, `CompletedAt`, `SessionID`, `SessionSummary`, `SessionLogPath`, `DisplayID`. The LLM cannot overwrite these fields.
 - Focus suggestion is always visible — never renders as empty:
   - Auto-generates on data load when focus is empty (first launch, DB clear, post-refresh)
   - Auto-refreshes after todo mutations
@@ -877,6 +878,8 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Detail view `delete`/`backspace`: kills running agent session, shows flash
 - Detail view `delete`/`backspace`: shows "No running agent" when no session active
 - Session viewer: `w` opens live viewer for active session, replay for saved log, flash for no session
+- Session viewer: `w` hint shows "w log" when todo has SessionLogPath but no active session (BUG-149)
+- LLM edit: handleClaudeEditFinished preserves SessionLogPath from existing todo (BUG-149)
 - Session viewer: `c` opens message input, `enter` sends to agent via daemon or local stdin
 - Session viewer: `o` joins session interactively (extracts session_id from log if missing)
 - Session viewer: `G` jumps to bottom and re-enables auto-scroll
