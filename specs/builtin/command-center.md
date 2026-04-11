@@ -214,6 +214,17 @@ The `S` key from the command tab or detail view also opens the schedule modal (a
 
 The modal is a centered lipgloss box with a border, rendered via `lipgloss.Place` within the `viewHeight` budget (the same vertical space used by the todo list). The modal must NOT add lines beyond `viewHeight` — using the full `height` (which includes the plugin's internal overhead of 14 lines) would cause the total rendered output to exceed the TUI host's content allocation, producing ghost artifacts (duplicated headers, shifted masthead) in bubbletea's differential renderer. The modal intercepts all key input when active (checked early in `HandleKey`). Unhandled keys return `ConsumedAction()` (not `NoopAction()`) to prevent the host from processing them (e.g., Tab switching host-level tabs while the modal is showing).
 
+**ClearScreen on state transitions (BUG-151):**
+
+Any action that changes the rendered line count between frames must include `tea.ClearScreen` in its returned command batch. Without this, bubbletea's differential renderer produces ghost artifacts (duplicated headers, shifted masthead). The following actions include `tea.ClearScreen`:
+
+- `x` (complete), `X` (dismiss), `u` (undo), `d` (defer) — remove/restore items, changing visible content
+- `s` (star toggle) — starring opens the schedule modal; unstarring adds a flash message; both change the view
+- `S` (schedule open) — opens the modal overlay
+- `f` (focus toggle) — adds a flash message and may change filtered items
+- Schedule modal dismiss (`esc` in picker or booked state) — removes the modal overlay
+- Unstar confirm handler (`y`/`n` in unstarConfirmMode) — clears flash and changes star/focus state
+
 ### Unstar Confirm Mode
 
 When a user unstarring a todo has future calendar bookings (detected via `DBGetFutureBookingsForTodo`), `unstarConfirmMode` is set to `true` and `unstarConfirmTodoID` is set to the todo's ID. A flash message appears:

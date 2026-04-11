@@ -596,7 +596,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					}
 					return db.DBSetTodoStar(database, todoID, true)
 				})
-				cmds := []tea.Cmd{dbCmd}
+				cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 					cmds = append(cmds, notifyCmd)
 				}
@@ -618,7 +618,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBSetTodoStar(database, todoID, false)
 				})
-				cmds := []tea.Cmd{dbCmd}
+				cmds := []tea.Cmd{dbCmd, tea.ClearScreen}
 				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 					cmds = append(cmds, notifyCmd)
 				}
@@ -654,10 +654,10 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBSetTodoStar(database, todoID, true)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(dbCmd, tea.ClearScreen)}
 			}
 		}
-		return plugin.NoopAction()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.ClearScreen}
 
 	case "f":
 		// Focus toggle
@@ -694,7 +694,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBSetTodoFocus(database, todoID, false)
 				})
-				cmdsUnfocus := []tea.Cmd{dbCmd}
+				cmdsUnfocus := []tea.Cmd{dbCmd, tea.ClearScreen}
 				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 					cmdsUnfocus = append(cmdsUnfocus, notifyCmd)
 				}
@@ -712,7 +712,7 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBSetTodoFocus(database, todoID, true)
 			})
-			cmdsFocus := []tea.Cmd{dbCmd}
+			cmdsFocus := []tea.Cmd{dbCmd, tea.ClearScreen}
 			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 				cmdsFocus = append(cmdsFocus, notifyCmd)
 			}
@@ -877,7 +877,7 @@ func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
 			return plugin.ConsumedAction()
 		case "esc":
 			p.scheduleModalActive = false
-			return plugin.ConsumedAction()
+			return plugin.Action{Type: plugin.ActionConsumed, TeaCmd: tea.ClearScreen}
 		}
 		return plugin.ConsumedAction()
 	}
@@ -915,7 +915,7 @@ func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
 
 	case "esc":
 		p.scheduleModalActive = false
-		return plugin.ConsumedAction()
+		return plugin.Action{Type: plugin.ActionConsumed, TeaCmd: tea.ClearScreen}
 	}
 
 	return plugin.ConsumedAction()
@@ -948,7 +948,7 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 			return db.DBSetTodoStar(database, todoID, false) // clears only star
 		})
 		relCmd := releaseBookingsCmd(p, todoID)
-		cmdsY := []tea.Cmd{dbCmd, relCmd}
+		cmdsY := []tea.Cmd{dbCmd, relCmd, tea.ClearScreen}
 		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 			cmdsY = append(cmdsY, notifyCmd)
 		}
@@ -971,7 +971,7 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 			}
 			return db.DBSetTodoStar(database, todoID, false)
 		})
-		cmdsN := []tea.Cmd{dbCmd}
+		cmdsN := []tea.Cmd{dbCmd, tea.ClearScreen}
 		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
 			cmdsN = append(cmdsN, notifyCmd)
 		}
@@ -979,7 +979,7 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 
 	default:
 		// Any other key: cancel, stay starred
-		return plugin.NoopAction()
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.ClearScreen}
 	}
 }
 

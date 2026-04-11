@@ -2718,3 +2718,207 @@ func TestView_BUG146_BookedStateConsumesAllKeys(t *testing.T) {
 		t.Error("modal should be dismissed")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// BUG-151: Star/focus/modal transitions must include tea.ClearScreen
+// ---------------------------------------------------------------------------
+
+func TestView_BUG151_StarToggleReturnsClearScreen(t *testing.T) {
+	// Starring a todo opens the schedule modal, which changes the rendered
+	// content. The returned action must include a non-nil TeaCmd (which
+	// contains tea.ClearScreen) to force a full repaint.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Star me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	action := p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal to be active after starring")
+	}
+	if action.TeaCmd == nil {
+		t.Error("star toggle (open modal) must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_UnstarReturnsClearScreen(t *testing.T) {
+	// Unstarring a todo (no future bookings) sets a flash message, changing
+	// the view content. Must include ClearScreen.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Unstar me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	action := p.HandleKey(keyMsg("s"))
+	if p.scheduleModalActive {
+		t.Fatal("unstarring should not open schedule modal")
+	}
+	if action.TeaCmd == nil {
+		t.Error("unstar toggle must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_ScheduleOpenReturnsClearScreen(t *testing.T) {
+	// S key opens the schedule modal on an already-starred todo.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Schedule me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	action := p.HandleKey(keyMsg("S"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal to be active after S key")
+	}
+	if action.TeaCmd == nil {
+		t.Error("S (schedule open on starred todo) must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_ScheduleModalDismissReturnsClearScreen(t *testing.T) {
+	// Dismissing the schedule modal (esc from picker) changes the view
+	// from modal overlay back to the todo list. Must include ClearScreen.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Dismiss me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal active")
+	}
+
+	// Dismiss with esc
+	action := p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Fatal("expected schedule modal dismissed after esc")
+	}
+	if action.TeaCmd == nil {
+		t.Error("schedule modal dismiss (esc) must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_ScheduleModalBookedDismissReturnsClearScreen(t *testing.T) {
+	// Dismissing from booked state must also include ClearScreen.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Booked dismiss", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+
+	// Simulate booking completion
+	p.HandleMessage(bookingCompleteMsg{
+		todoID:    "t1",
+		startTime: time.Date(2026, 4, 11, 14, 30, 0, 0, time.Local),
+		endTime:   time.Date(2026, 4, 11, 15, 30, 0, 0, time.Local),
+		duration:  60,
+	})
+
+	if p.scheduleModalState != "booked" {
+		t.Fatalf("expected booked state, got %q", p.scheduleModalState)
+	}
+
+	// Dismiss from booked state
+	action := p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Fatal("expected modal dismissed")
+	}
+	if action.TeaCmd == nil {
+		t.Error("schedule modal dismiss from booked state must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_FocusToggleReturnsClearScreen(t *testing.T) {
+	// Focusing a todo sets a flash message. Must include ClearScreen.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Focus me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	action := p.HandleKey(keyMsg("f"))
+	if action.TeaCmd == nil {
+		t.Error("focus toggle (focus on) must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_UnfocusToggleReturnsClearScreen(t *testing.T) {
+	// Unfocusing a todo sets a flash message. Must include ClearScreen.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Unfocus me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	action := p.HandleKey(keyMsg("f"))
+	if action.TeaCmd == nil {
+		t.Error("focus toggle (unfocus) must return a non-nil TeaCmd containing tea.ClearScreen")
+	}
+}
+
+func TestView_BUG151_StarLineCountStability(t *testing.T) {
+	// Verify line count does not change after starring (modal opens).
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Line count test", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+		{ID: "t2", Title: "Another todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	viewBefore := renderView(p)
+	linesBefore := strings.Count(viewBefore, "\n")
+
+	p.HandleKey(keyMsg("s"))
+
+	viewAfter := renderView(p)
+	linesAfter := strings.Count(viewAfter, "\n")
+
+	if linesBefore != linesAfter {
+		t.Errorf("BUG-151: star toggle changed line count: before=%d, after=%d (diff=%+d)",
+			linesBefore, linesAfter, linesAfter-linesBefore)
+	}
+}
+
+func TestView_BUG151_ModalDismissLineCountStability(t *testing.T) {
+	// Verify line count does not change after dismissing the modal.
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Dismiss line test", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Render before any changes
+	viewBefore := renderView(p)
+	linesBefore := strings.Count(viewBefore, "\n")
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+
+	// Dismiss modal
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+
+	// Render after dismiss
+	viewAfter := renderView(p)
+	linesAfter := strings.Count(viewAfter, "\n")
+
+	if linesBefore != linesAfter {
+		t.Errorf("BUG-151: modal dismiss changed line count: before=%d, after=%d (diff=%+d)",
+			linesBefore, linesAfter, linesAfter-linesBefore)
+	}
+}
