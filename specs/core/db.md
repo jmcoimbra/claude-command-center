@@ -147,7 +147,7 @@ All types are exported for use by other packages:
 - `WerePreviouslyMergedAndVetoed(merges, idA, idB)` -- in-memory helper: checks if two todo IDs were ever in the same synthesis group and one was vetoed out. Prevents re-merging a specific pair while allowing each ID to merge with unrelated todos.
 
 ### Bulk Refresh
-- `DBSaveRefreshResult` -- atomically saves all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`. Todos use a delete-only-known-IDs strategy: before re-inserting, only IDs present in `cc.Todos` are deleted. Todos not in the batch (e.g., manually created during refresh) survive. Other data types (PRs, calendar, suggestions, pending actions) still use full replace. **Focus/starred preservation**: The INSERT includes `focus` and `starred` columns from the Todo struct (which carries values from the Merge step). A snapshot-restore fallback also reads existing focus/starred from the DB before deleting, and restores after re-insert. Both mechanisms ensure user-set priority flags survive refresh cycles.
+- `DBSaveRefreshResult` -- atomically saves all refresh-managed data (todos, pull requests, calendar, suggestions, pending actions, generated_at) in a single transaction. Used by `ai-cron`. Todos use a delete-only-known-IDs strategy: before re-inserting, only IDs present in `cc.Todos` are deleted. Todos not in the batch (e.g., manually created during refresh) survive. Other data types (PRs, calendar, suggestions, pending actions) still use full replace. **Focus/starred preservation**: The INSERT includes `focus` and `starred` columns from the Todo struct (which carries values from the Merge step). A snapshot-restore fallback also reads existing focus/starred from the DB before deleting, and restores after re-insert. Both mechanisms ensure user-set priority flags survive refresh cycles. **Session field preservation**: The snapshot-restore mechanism also preserves `session_id`, `session_summary`, and `session_log_path` — daemon-set session fields that the refresh cycle does not produce. These fields are snapshotted before delete and restored after re-insert, same pattern as focus/starred.
 
 ### Bookmarks & Paths (DB)
 - `DBLoadBookmarks`, `DBInsertBookmark`, `DBRemoveBookmark`
@@ -265,6 +265,7 @@ All types are exported for use by other packages:
 - DBIsEmpty on fresh vs populated DB
 - DBSaveRefreshResult round-trip
 - DBSaveRefreshResult preserves focus/starred across refresh cycles (BUG-147)
+- DBSaveRefreshResult preserves session_id/session_summary/session_log_path across refresh cycles (BUG-149)
 - In-memory mutations (complete, remove, add, defer, promote)
 - ActiveTodos/CompletedTodos filtering
 - DueUrgency for overdue/soon/later/none/bad-date

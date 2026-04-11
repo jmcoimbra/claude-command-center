@@ -586,9 +586,15 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 	// This preserves any todos created during the refresh window (race-safe).
 	// Todos not in cc.Todos (e.g., manual todos added mid-refresh) survive.
 
-	// Snapshot focus/starred before delete so we can restore them after re-insert.
-	// These are user-set priority flags that must survive refresh cycles.
-	prioritySnapshot := make(map[string][2]bool) // id -> {focus, starred}
+	// Snapshot focus/starred and session fields before delete so we can restore
+	// them after re-insert. These are set outside the refresh cycle (user priority
+	// flags and daemon-set session fields) and must survive refresh.
+	type todoSnapshot struct {
+		Focus, Starred       bool
+		SessionID, Summary   string
+		LogPath              string
+	}
+	snapshots := make(map[string]todoSnapshot)
 	if len(cc.Todos) > 0 {
 		ids := make([]interface{}, len(cc.Todos))
 		placeholders := make([]string, len(cc.Todos))
@@ -596,14 +602,18 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			ids[i] = t.ID
 			placeholders[i] = "?"
 		}
-		rows, err := tx.Query(`SELECT id, COALESCE(focus, 0), COALESCE(starred, 0) FROM cc_todos WHERE id IN (`+strings.Join(placeholders, ",")+`)`, ids...)
+		rows, err := tx.Query(`SELECT id, COALESCE(focus, 0), COALESCE(starred, 0), COALESCE(session_id, ''), COALESCE(session_summary, ''), COALESCE(session_log_path, '') FROM cc_todos WHERE id IN (`+strings.Join(placeholders, ",")+`)`, ids...)
 		if err == nil {
 			defer rows.Close()
 			for rows.Next() {
 				var id string
 				var focusInt, starredInt int
-				if rows.Scan(&id, &focusInt, &starredInt) == nil {
-					prioritySnapshot[id] = [2]bool{focusInt == 1, starredInt == 1}
+				var sessID, sessSummary, sessLogPath string
+				if rows.Scan(&id, &focusInt, &starredInt, &sessID, &sessSummary, &sessLogPath) == nil {
+					snapshots[id] = todoSnapshot{
+						Focus: focusInt == 1, Starred: starredInt == 1,
+						SessionID: sessID, Summary: sessSummary, LogPath: sessLogPath,
+					}
 				}
 			}
 			rows.Close()
@@ -673,18 +683,19 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 		}
 	}
 
-	// Restore focus/starred from snapshot.
-	for id, flags := range prioritySnapshot {
-		if flags[0] || flags[1] {
+	// Restore focus/starred and session fields from snapshot.
+	for id, snap := range snapshots {
+		if snap.Focus || snap.Starred || snap.SessionID != "" || snap.Summary != "" || snap.LogPath != "" {
 			focusVal, starVal := 0, 0
-			if flags[0] {
+			if snap.Focus {
 				focusVal = 1
 			}
-			if flags[1] {
+			if snap.Starred {
 				starVal = 1
 			}
-			if _, err := tx.Exec(`UPDATE cc_todos SET focus = ?, starred = ? WHERE id = ?`, focusVal, starVal, id); err != nil {
-				return fmt.Errorf("restore priority for todo %s: %w", id, err)
+			if _, err := tx.Exec(`UPDATE cc_todos SET focus = ?, starred = ?, session_id = NULLIF(?, ''), session_summary = NULLIF(?, ''), session_log_path = NULLIF(?, '') WHERE id = ?`,
+				focusVal, starVal, snap.SessionID, snap.Summary, snap.LogPath, id); err != nil {
+				return fmt.Errorf("restore snapshot for todo %s: %w", id, err)
 			}
 		}
 	}

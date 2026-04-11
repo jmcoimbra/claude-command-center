@@ -417,6 +417,7 @@ func (p *Plugin) handleClaudeEditFinished(msg claudeEditFinishedMsg) (bool, plug
 				updated.CompletedAt = existing.CompletedAt
 				updated.SessionID = existing.SessionID
 				updated.SessionSummary = existing.SessionSummary
+				updated.SessionLogPath = existing.SessionLogPath
 				updated.DisplayID = existing.DisplayID
 				p.cc.Todos[i] = updated
 				break
