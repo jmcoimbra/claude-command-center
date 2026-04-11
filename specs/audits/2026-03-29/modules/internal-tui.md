@@ -179,7 +179,7 @@
 
 ### ContentMaxWidth
 
-- **[UNCOVERED-IMPLEMENTATION]** Layout constant (120), no spec needed
+- **[UNCOVERED-IMPLEMENTATION]** Layout constant (144), no spec needed
 
 ---
 

@@ -6,7 +6,7 @@ import (
 )
 
 // ContentMaxWidth is the maximum width for content panels.
-const ContentMaxWidth = 120
+const ContentMaxWidth = 144
 
 // Styles holds all lipgloss styles derived from a palette.
 type Styles struct {

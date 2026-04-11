@@ -436,7 +436,7 @@ func (f *fakeConsumingPlugin) HandleKey(msg tea.KeyMsg) plugin.Action {
 type fakeWidePlugin struct{ stubPlugin }
 
 func (f *fakeWidePlugin) View(width, height, frame int) string {
-	// Return a line that's 200 chars wide — wider than ContentMaxWidth (120).
+	// Return a line that's 200 chars wide — wider than ContentMaxWidth (144).
 	return strings.Repeat("X", 200)
 }
 

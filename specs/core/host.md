@@ -254,7 +254,7 @@ All cross-plugin communication uses the event bus exclusively. The host does not
 5. Centered in terminal via `lipgloss.Place`
 6. Budget widget overlaid on row 1, right-aligned (see [Budget Widget](#budget-widget)). The overlay row must account for banner visibility — when the banner is hidden, the overlay row must skip the tab bar.
 
-**Width normalization**: Before joining sections vertically, each section (banner, tab bar, flash/hint, plugin content) must be padded to a consistent width (`ContentMaxWidth`) using `lipgloss.PlaceHorizontal`. This ensures `JoinVertical(lipgloss.Left, ...)` produces stable horizontal alignment regardless of the active plugin's content width. Without this, narrower or wider plugin content shifts the banner and tab bar horizontally.
+**Width normalization**: Before joining sections vertically, each section (banner, tab bar, flash/hint, plugin content) must be padded to a consistent width (`ContentMaxWidth = 144`) using `lipgloss.PlaceHorizontal`. This ensures `JoinVertical(lipgloss.Left, ...)` produces stable horizontal alignment regardless of the active plugin's content width. Without this, narrower or wider plugin content shifts the banner and tab bar horizontally.
 
 **Content height calculation**: The host computes the overhead (banner + spacing + tab bar) by rendering the header sections and counting newlines, then passes `terminalHeight - overhead` as `contentHeight` to the plugin (minimum 10). This prevents plugins from sizing their layouts to the full terminal height and overflowing past the banner/tabs.
 
