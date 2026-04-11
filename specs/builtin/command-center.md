@@ -24,6 +24,7 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `styles.go` | Local style/gradient types populated from `config.Palette` (avoids circular imports with tui) |
 | `refresh.go` | Background refresh command (finds and spawns `ai-cron` binary) |
 | `claude.go` | Background Claude CLI/LLM commands (edit, enrich, command, focus), prompt builders |
+| `calendar.go` | Calendar API interactions: `scheduleBlockCmd` (background tea.Cmd for booking a time block), `releaseBookingsCmd` (background tea.Cmd for deleting calendar events). Uses `calendar.FindFreeSlot` and `calendar.LoadAuth` from `internal/refresh/sources/calendar`. |
 
 **Related refresh files** (in `internal/refresh/`):
 
@@ -51,6 +52,9 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 - `wizardSelections map[string]wizardSelection` — per-todo wizard selections persisted across open/close
 - `undoStack []undoEntry` — stack of undo-able todo actions
 - `pendingLaunchTodo *db.Todo` — todo awaiting session navigation
+- `scheduleOfferMode bool` — true after starring a todo; prompts user to schedule time
+- `unstarConfirmMode bool` — true when unstarring a todo that has future calendar bookings; prompts user to release the calendar blocks
+- `unstarConfirmTodoID string` — ID of the todo awaiting unstar confirmation
 
 ## Key Bindings
 
@@ -166,6 +170,33 @@ Two plugin-owned migrations:
 Todos have a `display_id` column (auto-incrementing integer) for stable, human-readable references. Used in the detail view title ("TODO #N") and anywhere a short identifier is needed.
 
 ## Behavior
+
+### Schedule Offer Mode
+
+After a todo is starred (via the star key), `scheduleOfferMode` is set to `true` and a flash message appears:
+
+```
+★ <todo title> — Schedule time? S = yes, any key = skip
+```
+
+- `S` (while in offer mode) — exits offer mode and enters booking mode / duration picker for the starred todo
+- Any other key — exits offer mode and processes the key normally (pass-through)
+- Auto-dismisses after 3 seconds if no key is pressed
+
+This gives the user a single-keystroke path from starring a todo to booking calendar time for it.
+
+### Unstar Confirm Mode
+
+When a user unstarring a todo has future calendar bookings (detected via `DBGetFutureBookingsForTodo`), `unstarConfirmMode` is set to `true` and `unstarConfirmTodoID` is set to the todo's ID. A flash message appears:
+
+- **1 event**: `Release calendar block? (y/n)`
+- **N events**: `Release N calendar blocks? (y/n)`
+
+Responses:
+
+- `y` — deletes the future Google Calendar events via the Calendar API (`releaseBookingsCmd`), removes the booking records from `cc_todo_bookings`, then unsets `starred` on the todo
+- `n` — unsets `starred` on the todo but leaves calendar events in place (booking records remain)
+- Any other key — cancels the confirmation; the todo stays starred and `unstarConfirmMode` is cleared
 
 ### Command Center View
 
