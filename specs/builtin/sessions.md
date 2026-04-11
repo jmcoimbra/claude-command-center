@@ -150,6 +150,8 @@ When `Refresh()` polls the daemon, it compares the current session list against 
 | left/right/tab | Toggle yes/no selection |
 | enter | Execute currently highlighted choice |
 
+After confirming a deletion (y or enter with yes selected), any active filter text is cleared and the filter is re-applied so the New sub-tab returns to the full unfiltered list.
+
 ### Worktree warning overlay (not a git repo)
 
 | Key | Description |
@@ -446,6 +448,7 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, clears filter text, emits LaunchRequestMsg to launch session
 - Browse (fzf) selection clears any active filter so the New sub-tab list is not empty if launch fails
 - Browse (fzf) cancellation (esc/error) is a no-op
+- Delete confirmation (y) on a path while filter is active clears the filter and returns to the full list
 
 ### Worktrees sub-tab
 

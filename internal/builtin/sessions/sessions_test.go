@@ -1240,3 +1240,42 @@ func TestFzfFinishedMsg_EmptyPathIsNoop(t *testing.T) {
 		t.Fatal("paths should not change on empty fzf selection")
 	}
 }
+
+func TestConfirmingYClearsFilter(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+
+	_ = db.DBAddPath(p.db, "/tmp/alpha-project")
+	_ = db.DBAddPath(p.db, "/tmp/beta-project")
+	p.paths = append(p.paths, "/tmp/alpha-project", "/tmp/beta-project")
+	p.newList.SetItems(p.buildNewItems())
+
+	// Set a filter to narrow the list
+	p.filterText = "alpha"
+	p.applyFilter()
+
+	// Enter confirming mode for the filtered item
+	p.confirming = true
+	p.confirmItem = newItem{path: "/tmp/alpha-project", label: "alpha-project"}
+
+	// Press "y" to confirm deletion
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	if p.confirming {
+		t.Fatal("expected confirming to be false after y")
+	}
+	if p.filterText != "" {
+		t.Fatalf("expected filterText to be cleared after confirm delete, got %q", p.filterText)
+	}
+
+	// Verify the remaining path is still visible (not filtered out)
+	found := false
+	for _, path := range p.paths {
+		if path == "/tmp/beta-project" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected beta-project to still be in paths")
+	}
+}

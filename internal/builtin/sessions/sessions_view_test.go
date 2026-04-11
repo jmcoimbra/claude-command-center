@@ -635,3 +635,29 @@ func TestView_SessionListNoScrollWhenFitsInHeight(t *testing.T) {
 	assertViewNotContains(t, view, "more above")
 	assertViewNotContains(t, view, "more below")
 }
+
+// ---------------------------------------------------------------------------
+// BUG-152: Delete confirmation resets filter
+// ---------------------------------------------------------------------------
+
+func TestView_ConfirmDeleteResetsFilter(t *testing.T) {
+	p := setupNewTabPlugin(t)
+
+	_ = db.DBAddPath(p.db, "/tmp/alpha-project")
+	_ = db.DBAddPath(p.db, "/tmp/beta-project")
+	p.paths = append(p.paths, "/tmp/alpha-project", "/tmp/beta-project")
+	p.newList.SetItems(p.buildNewItems())
+
+	// Set a filter so the list is narrowed
+	p.filterText = "alpha"
+	p.applyFilter()
+
+	// Enter confirm mode and press 'y' to delete
+	p.newList.Select(0)
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyDelete})
+	p.HandleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+
+	// After deletion, the remaining item should be visible (filter cleared)
+	view := p.View(120, 38, 0)
+	assertViewContains(t, view, "beta-project")
+}

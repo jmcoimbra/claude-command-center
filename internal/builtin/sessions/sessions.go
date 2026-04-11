@@ -1137,6 +1137,8 @@ func (p *Plugin) handleConfirming(msg tea.KeyMsg) plugin.Action {
 		if p.db != nil {
 			_ = db.DBRemovePath(p.db, p.confirmItem.path)
 		}
+		p.filterText = ""
+		p.newList.ResetFilter()
 		p.newList.SetItems(p.buildNewItems())
 	}
 
