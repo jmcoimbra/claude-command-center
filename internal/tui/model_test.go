@@ -278,3 +278,29 @@ func TestPluginTabMapping(t *testing.T) {
 		t.Errorf("expected tab 3 to be settings, got %s", m.tabs[3].plugin.Slug())
 	}
 }
+
+func TestLaunchRequestMsg_SetsLaunchAction(t *testing.T) {
+	cfg := testSetup(t)
+	database, err := db.OpenDB(t.TempDir() + "/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	m := NewModel(database, cfg, plugin.NewBus(), plugin.NewMemoryLogger(), llm.NoopLLM{})
+	m.width = 120
+	m.height = 40
+
+	// Send a LaunchRequestMsg (as would be emitted by browse flow)
+	newModel, _ := m.Update(plugin.LaunchRequestMsg{
+		Args: map[string]string{"dir": "/tmp/browse-target"},
+	})
+
+	updated := newModel.(Model)
+	if updated.Launch == nil {
+		t.Fatal("expected Launch to be set after LaunchRequestMsg")
+	}
+	if updated.Launch.Dir != "/tmp/browse-target" {
+		t.Fatalf("expected Launch.Dir=/tmp/browse-target, got %q", updated.Launch.Dir)
+	}
+}

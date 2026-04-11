@@ -18,6 +18,14 @@ type LaunchMsg struct {
 // stopping a daemon agent) is complete and the TUI should proceed to quit.
 type LaunchReadyMsg struct{}
 
+// LaunchRequestMsg is emitted via a tea.Cmd when a plugin needs to trigger a
+// launch from HandleMessage (which can't return actionable action types through
+// broadcastMessage). The host handles this in its Update loop and routes it
+// through processAction.
+type LaunchRequestMsg struct {
+	Args map[string]string
+}
+
 // ReturnMsg is broadcast to all plugins when the TUI starts after returning
 // from a Claude session.
 type ReturnMsg struct {

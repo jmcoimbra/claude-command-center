@@ -717,12 +717,24 @@ func (p *Plugin) HandleMessage(msg tea.Msg) (bool, plugin.Action) {
 				_ = db.DBUpdatePathDescription(p.db, msg.path, heuristic)
 			}
 		}
+		// Clear any active filter so the list shows all items if the launch
+		// is somehow not processed (defensive).
+		p.filterText = ""
+		p.applyFilter()
 		p.newList.SetItems(p.buildNewItems())
 		// Fire background LLM description upgrade (may complete before app quits on launch)
 		go p.backgroundDescribe(msg.path)
+		// Emit a LaunchRequestMsg via tea.Cmd so the host processes the launch.
+		// Returning ActionLaunch directly from HandleMessage doesn't work because
+		// broadcastMessage only collects TeaCmds and ignores action types.
+		launchPath := msg.path
 		return true, plugin.Action{
-			Type: "launch",
-			Args: map[string]string{"dir": msg.path},
+			Type: plugin.ActionNoop,
+			TeaCmd: func() tea.Msg {
+				return plugin.LaunchRequestMsg{
+					Args: map[string]string{"dir": launchPath},
+				}
+			},
 		}
 
 	case pathDescribeFinishedMsg:

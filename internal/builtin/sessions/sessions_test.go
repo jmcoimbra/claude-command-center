@@ -1144,3 +1144,99 @@ func TestFindClaudeSessionID_EmptyOnMissingDir(t *testing.T) {
 		t.Fatalf("expected empty string, got %q", got)
 	}
 }
+
+// --- BUG-143: Browse flow tests ---
+
+func TestFzfFinishedMsg_ClearsFilterText(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+
+	// Simulate user typing a filter before triggering browse
+	p.filterText = "somefilter"
+	p.applyFilter()
+
+	// Simulate fzf returning a path
+	_, _ = p.HandleMessage(fzfFinishedMsg{path: "/tmp/test-project"})
+
+	if p.filterText != "" {
+		t.Fatalf("expected filterText to be cleared after fzf browse, got %q", p.filterText)
+	}
+}
+
+func TestFzfFinishedMsg_AddsPathToList(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+	initialCount := len(p.paths)
+
+	_, _ = p.HandleMessage(fzfFinishedMsg{path: "/tmp/new-browse-path"})
+
+	if len(p.paths) != initialCount+1 {
+		t.Fatalf("expected %d paths after browse, got %d", initialCount+1, len(p.paths))
+	}
+	found := false
+	for _, path := range p.paths {
+		if path == "/tmp/new-browse-path" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected /tmp/new-browse-path in paths list after browse")
+	}
+}
+
+func TestFzfFinishedMsg_EmitsLaunchRequestMsg(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+
+	_, action := p.HandleMessage(fzfFinishedMsg{path: "/tmp/browse-launch"})
+
+	// The action type should be noop (not "launch") because the launch is
+	// emitted as a LaunchRequestMsg via TeaCmd.
+	if action.Type == plugin.ActionLaunch {
+		t.Fatal("expected action.Type != ActionLaunch (launch should go through LaunchRequestMsg)")
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected a TeaCmd to be returned for LaunchRequestMsg emission")
+	}
+
+	// Execute the TeaCmd and verify it produces a LaunchRequestMsg.
+	msg := action.TeaCmd()
+	launchReq, ok := msg.(plugin.LaunchRequestMsg)
+	if !ok {
+		t.Fatalf("expected LaunchRequestMsg, got %T", msg)
+	}
+	if launchReq.Args["dir"] != "/tmp/browse-launch" {
+		t.Fatalf("expected dir=/tmp/browse-launch, got %q", launchReq.Args["dir"])
+	}
+}
+
+func TestFzfFinishedMsg_ErrorIsNoop(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+	initialCount := len(p.paths)
+
+	_, action := p.HandleMessage(fzfFinishedMsg{path: "", err: os.ErrNotExist})
+
+	if action.Type != plugin.ActionNoop {
+		t.Fatalf("expected noop on fzf error, got %q", action.Type)
+	}
+	if len(p.paths) != initialCount {
+		t.Fatal("paths should not change on fzf error")
+	}
+}
+
+func TestFzfFinishedMsg_EmptyPathIsNoop(t *testing.T) {
+	p := setupPlugin(t)
+	p.subTab = subTabNew
+	initialCount := len(p.paths)
+
+	_, action := p.HandleMessage(fzfFinishedMsg{path: ""})
+
+	if action.Type != plugin.ActionNoop {
+		t.Fatalf("expected noop on empty path, got %q", action.Type)
+	}
+	if len(p.paths) != initialCount {
+		t.Fatal("paths should not change on empty fzf selection")
+	}
+}

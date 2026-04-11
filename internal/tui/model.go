@@ -713,6 +713,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// agent). Now it's safe to quit and hand off to RunClaude.
 		return m, tea.Quit
 
+	case plugin.LaunchRequestMsg:
+		// A plugin emitted a launch request via tea.Cmd (e.g. after fzf
+		// browse selection). Route it through processAction so the host
+		// handles it the same as an ActionLaunch from HandleKey.
+		return m.processAction(plugin.Action{
+			Type: plugin.ActionLaunch,
+			Args: msg.Args,
+		})
+
 	default:
 		var cmds []tea.Cmd
 		m.broadcastMessage(msg, &cmds)

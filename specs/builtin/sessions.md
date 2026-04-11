@@ -301,7 +301,9 @@ The "Browse..." item is always the last entry in the New sub-tab list (`isBrowse
 3. On `fzfFinishedMsg` (user selected a path):
    - Adds path to the in-memory paths list and persists via `db.DBAddPath`
    - Writes heuristic description immediately, fires background LLM description upgrade
-   - Returns `ActionLaunch` with the selected path — the session launches immediately after browse
+   - Clears any active filter text so the New sub-tab list shows all items
+   - Emits a `LaunchRequestMsg` via `tea.Cmd` — the host processes this as an `ActionLaunch`, launching a session at the selected path immediately
+   - **Note:** The launch is emitted via `LaunchRequestMsg` (not a direct `ActionLaunch` return) because `HandleMessage` actions are routed through `broadcastMessage`, which only collects `TeaCmd`s and ignores action types
 4. On error or empty selection (user pressed `esc` in fzf): no-op
 
 ### Daemon Archive RPC on Session Dismiss
@@ -441,7 +443,8 @@ Blocked sessions are detected by cross-referencing live sessions with daemon age
 - LLMDescribePath with README.md returns LLM-generated summary
 - LLMDescribePath without README.md or CLAUDE.md falls back to heuristic
 - LLMDescribePath on LLM error falls back to heuristic
-- Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, launches session
+- Browse (fzf) selection adds path to DB, writes heuristic description, fires background LLM upgrade, clears filter text, emits LaunchRequestMsg to launch session
+- Browse (fzf) selection clears any active filter so the New sub-tab list is not empty if launch fails
 - Browse (fzf) cancellation (esc/error) is a no-op
 
 ### Worktrees sub-tab
