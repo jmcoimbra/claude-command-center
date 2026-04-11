@@ -322,3 +322,161 @@ func TestMerge_NilExisting(t *testing.T) {
 		t.Error("expected 1 todo")
 	}
 }
+
+func TestMerge_FocusStarPreserved(t *testing.T) {
+	existing := &db.CommandCenter{
+		Todos: []db.Todo{
+			{ID: "t1", Title: "Starred task", Status: db.StatusBacklog, SourceRef: "gh-1", Focus: true, Starred: true},
+			{ID: "t2", Title: "Focused task", Status: db.StatusBacklog, SourceRef: "sl-1", Focus: true, Starred: false},
+			{ID: "t3", Title: "Manual starred", Status: db.StatusBacklog, Source: "manual", Focus: true, Starred: true},
+		},
+	}
+	fresh := &FreshData{
+		Todos: []db.Todo{
+			{Title: "Starred task (updated)", Source: "github", SourceRef: "gh-1"},
+			{Title: "Focused task (updated)", Source: "slack", SourceRef: "sl-1"},
+		},
+	}
+
+	result := Merge(existing, fresh)
+
+	for _, todo := range result.Todos {
+		switch todo.ID {
+		case "t1":
+			if !todo.Starred {
+				t.Error("t1: Starred should be preserved across merge")
+			}
+			if !todo.Focus {
+				t.Error("t1: Focus should be preserved across merge")
+			}
+		case "t2":
+			if !todo.Focus {
+				t.Error("t2: Focus should be preserved across merge")
+			}
+		case "t3":
+			if !todo.Starred {
+				t.Error("t3: Starred should be preserved for manual todo (unmatched)")
+			}
+			if !todo.Focus {
+				t.Error("t3: Focus should be preserved for manual todo (unmatched)")
+			}
+		}
+	}
+}
+
+func TestMerge_FocusStarPreservedFullRefreshCycle(t *testing.T) {
+	// This test simulates the FULL refresh.Run cycle:
+	// 1. Populate DB with todos
+	// 2. Star some
+	// 3. Load existing from DB
+	// 4. Merge with fresh data
+	// 5. Save via DBSaveRefreshResult
+	// 6. Reload from DB
+	// 7. Verify stars survive
+
+	dir := t.TempDir()
+	database, err := db.OpenDB(dir + "/test.db")
+	if err != nil {
+		t.Fatalf("OpenDB: %v", err)
+	}
+	defer database.Close()
+
+	now := time.Now()
+
+	// Step 1: Initial populate
+	initial := &db.CommandCenter{
+		GeneratedAt: now,
+		Todos: []db.Todo{
+			{ID: "t1", Title: "GitHub task", Status: db.StatusBacklog, Source: "github", SourceRef: "gh-1", CreatedAt: now},
+			{ID: "t2", Title: "Slack task", Status: db.StatusBacklog, Source: "slack", SourceRef: "sl-1", CreatedAt: now},
+			{ID: "t3", Title: "Manual task", Status: db.StatusBacklog, Source: "manual", CreatedAt: now},
+		},
+	}
+	if err := db.DBSaveRefreshResult(database, initial); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+
+	// Step 2: Star some todos
+	if err := db.DBSetTodoStar(database, "t1", true); err != nil {
+		t.Fatalf("star t1: %v", err)
+	}
+	if err := db.DBSetTodoStar(database, "t3", true); err != nil {
+		t.Fatalf("star t3: %v", err)
+	}
+
+	// Step 3: Load existing (simulating what refresh.Run does)
+	existing, err := db.LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load existing: %v", err)
+	}
+
+	// Verify existing has stars
+	for _, todo := range existing.Todos {
+		switch todo.ID {
+		case "t1":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("existing t1 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		case "t3":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("existing t3 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		}
+	}
+
+	// Step 4: Simulate fresh data from sources
+	fresh := &FreshData{
+		Todos: []db.Todo{
+			{Title: "GitHub task (updated)", Source: "github", SourceRef: "gh-1"},
+			{Title: "Slack task (updated)", Source: "slack", SourceRef: "sl-1"},
+			{Title: "Brand new task", Source: "granola", SourceRef: "gra-1"},
+		},
+	}
+
+	// Step 5: Merge (simulating what refresh.Run does)
+	merged := Merge(existing, fresh)
+
+	// Verify merged result has stars
+	for _, todo := range merged.Todos {
+		switch todo.ID {
+		case "t1":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("merged t1 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		case "t3":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("merged t3 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		}
+	}
+
+	// Step 6: Save via DBSaveRefreshResult (simulating what refresh.Run does)
+	if err := db.DBSaveRefreshResult(database, merged); err != nil {
+		t.Fatalf("save merged: %v", err)
+	}
+
+	// Step 7: Reload from DB (simulating what CCC TUI does after refresh)
+	reloaded, err := db.LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	for _, todo := range reloaded.Todos {
+		switch todo.ID {
+		case "t1":
+			if !todo.Starred {
+				t.Error("reloaded t1 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("reloaded t1 should be focused")
+			}
+		case "t3":
+			if !todo.Starred {
+				t.Error("reloaded t3 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("reloaded t3 should be focused")
+			}
+		}
+	}
+}

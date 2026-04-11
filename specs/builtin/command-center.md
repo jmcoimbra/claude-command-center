@@ -786,6 +786,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unstar confirm `n` unstars the todo in DB without touching calendar events
 - `f`, `s` operations call `notifyPeersCmd("data.refreshed")` for cross-instance sync
 - handleRefreshFinished respects write cooldown — skips DB reload if a dbWriteCmd was issued within last 2 seconds (prevents star/focus loss from stale reload after ai-cron completes)
+- Starred/focused state survives CCC restarts: Init loads stars from DB; startup refresh preserves them via DBSaveRefreshResult (focus/starred included in INSERT + snapshot-restore fallback); post-refresh reload reads correct state from DB (BUG-147)
 - Starred todos sort before non-starred todos within any filtered view
 - Starring an inbox item (status "new") auto-accepts it via AcceptTodo, moving it from Inbox to Todo tab
 - Star prefix width (2 chars) is included in title max-width calculation for both collapsed and expanded views — prevents line overflow and visual duplication (BUG-136)

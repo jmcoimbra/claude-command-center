@@ -637,9 +637,20 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			maxDisplayID++
 			displayID = maxDisplayID
 		}
+		// Include focus/starred in the INSERT so they survive refresh cycles
+		// without relying solely on the snapshot-restore step below.
+		focusVal := 0
+		if t.Focus {
+			focusVal = 1
+		}
+		starVal := 0
+		if t.Starred {
+			starVal = 1
+		}
 		_, err := tx.Exec(`INSERT INTO cc_todos (id, title, status, source, source_ref, context, detail,
 			who_waiting, project_dir, launch_mode, due, effort, session_id, proposed_prompt, session_summary,
 			session_log_path, source_context, source_context_at,
+			focus, starred,
 			display_id, sort_order, created_at, completed_at, updated_at)
 			VALUES (?, ?, ?, ?,
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
@@ -647,6 +658,7 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''),
 			NULLIF(?, ''), NULLIF(?, ''), NULLIF(?, ''),
+			?, ?,
 			?, ?, ?, ?, ?)`,
 			t.ID, t.Title, t.Status, t.Source,
 			t.SourceRef, t.Context, t.Detail,
@@ -654,6 +666,7 @@ func DBSaveRefreshResult(d *sql.DB, cc *CommandCenter) error {
 			t.Due, t.Effort, t.SessionID,
 			t.ProposedPrompt, t.SessionSummary,
 			t.SessionLogPath, t.SourceContext, t.SourceContextAt,
+			focusVal, starVal,
 			displayID, i, createdAt, completedAt, now)
 		if err != nil {
 			return fmt.Errorf("insert todo %s: %w", t.ID, err)

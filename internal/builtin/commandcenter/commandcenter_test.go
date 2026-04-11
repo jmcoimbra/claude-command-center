@@ -2859,3 +2859,167 @@ func TestHandleClaudeCommandFinished_EmptyDelegate(t *testing.T) {
 	}
 }
 
+
+// TestBUG147_StarsSurviveRestart simulates the full startup lifecycle:
+// 1. First ai-cron run inserts todos to DB
+// 2. User stars a todo (persisted to DB)
+// 3. CCC restarts (new plugin Init from same DB)
+// 4. Verify stars survive the Init load
+// 5. Simulate a startup refresh cycle (refresh finishes, reload from DB)
+// 6. Verify stars survive the post-refresh reload
+func TestBUG147_StarsSurviveRestart(t *testing.T) {
+	t.Setenv("CCC_CONFIG_DIR", t.TempDir())
+	database := testDB(t)
+	t.Cleanup(func() { database.Close() })
+
+	now := time.Now()
+
+	// Step 1: Simulate initial ai-cron populating DB
+	cc := &db.CommandCenter{
+		GeneratedAt: now,
+		Todos: []db.Todo{
+			{ID: "todo-1", Title: "First task", Status: db.StatusBacklog, Source: "github", SourceRef: "gh-1", CreatedAt: now},
+			{ID: "todo-2", Title: "Second task", Status: db.StatusBacklog, Source: "slack", SourceRef: "sl-1", CreatedAt: now},
+			{ID: "todo-3", Title: "Manual task", Status: db.StatusBacklog, Source: "manual", CreatedAt: now},
+		},
+	}
+	if err := db.DBSaveRefreshResult(database, cc); err != nil {
+		t.Fatalf("initial refresh save: %v", err)
+	}
+
+	// Step 2: User stars todos
+	if err := db.DBSetTodoStar(database, "todo-1", true); err != nil {
+		t.Fatalf("star todo-1: %v", err)
+	}
+	if err := db.DBSetTodoFocus(database, "todo-2", true); err != nil {
+		t.Fatalf("focus todo-2: %v", err)
+	}
+	if err := db.DBSetTodoStar(database, "todo-3", true); err != nil {
+		t.Fatalf("star todo-3: %v", err)
+	}
+
+	// Verify stars are in DB before restart
+	loaded, err := db.LoadCommandCenterFromDB(database)
+	if err != nil {
+		t.Fatalf("load before restart: %v", err)
+	}
+	for _, todo := range loaded.Todos {
+		switch todo.ID {
+		case "todo-1":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("pre-restart: todo-1 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		case "todo-2":
+			if !todo.Focus {
+				t.Errorf("pre-restart: todo-2 should be focused, got focus=%v", todo.Focus)
+			}
+		case "todo-3":
+			if !todo.Starred || !todo.Focus {
+				t.Errorf("pre-restart: todo-3 should be starred+focused, got starred=%v focus=%v", todo.Starred, todo.Focus)
+			}
+		}
+	}
+
+	// Step 3: Simulate CCC restart -- new plugin, Init from same DB
+	p := New()
+	cfg := config.DefaultConfig()
+	ctx := plugin.Context{
+		DB:          database,
+		Config:      cfg,
+		AgentRunner: agent.NewRunner(3),
+	}
+	if err := p.Init(ctx); err != nil {
+		t.Fatalf("Init after restart: %v", err)
+	}
+
+	// Step 4: Verify stars loaded in Init
+	if p.cc == nil {
+		t.Fatal("cc should be set after Init")
+	}
+	for _, todo := range p.cc.Todos {
+		switch todo.ID {
+		case "todo-1":
+			if !todo.Starred {
+				t.Error("after Init: todo-1 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("after Init: todo-1 should be focused")
+			}
+		case "todo-2":
+			if !todo.Focus {
+				t.Error("after Init: todo-2 should be focused")
+			}
+		case "todo-3":
+			if !todo.Starred {
+				t.Error("after Init: todo-3 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("after Init: todo-3 should be focused")
+			}
+		}
+	}
+
+	// Step 5: Simulate startup refresh cycle
+	// ai-cron has completed and written updated data to DB.
+	cc2 := &db.CommandCenter{
+		GeneratedAt: now.Add(5 * time.Minute),
+		Todos: []db.Todo{
+			{ID: "todo-1", Title: "First task (updated)", Status: db.StatusBacklog, Source: "github", SourceRef: "gh-1", CreatedAt: now},
+			{ID: "todo-2", Title: "Second task (updated)", Status: db.StatusBacklog, Source: "slack", SourceRef: "sl-1", CreatedAt: now},
+			{ID: "todo-3", Title: "Manual task", Status: db.StatusBacklog, Source: "manual", CreatedAt: now},
+		},
+	}
+	if err := db.DBSaveRefreshResult(database, cc2); err != nil {
+		t.Fatalf("startup refresh save: %v", err)
+	}
+
+	// Step 6: Simulate ccRefreshFinishedMsg leading to loadCCFromDBCmd then ccLoadedMsg
+	p.ccRefreshing = true
+	p.ccLastWrite = time.Time{} // zero value on startup -- no recent writes
+	handled, action := p.HandleMessage(ccRefreshFinishedMsg{err: nil})
+	if !handled {
+		t.Error("ccRefreshFinishedMsg should be handled")
+	}
+	if action.TeaCmd == nil {
+		t.Fatal("expected loadCCFromDBCmd to be returned")
+	}
+	// Execute the tea.Cmd manually to get the ccLoadedMsg
+	msg := action.TeaCmd()
+	loadedMsg, ok := msg.(ccLoadedMsg)
+	if !ok {
+		t.Fatalf("expected ccLoadedMsg, got %T", msg)
+	}
+	if loadedMsg.err != nil {
+		t.Fatalf("ccLoadedMsg error: %v", loadedMsg.err)
+	}
+
+	// Handle the ccLoadedMsg
+	p.HandleMessage(loadedMsg)
+
+	// Step 7: Verify stars survive the full restart + refresh cycle
+	if p.cc == nil {
+		t.Fatal("cc should be set after reload")
+	}
+	for _, todo := range p.cc.Todos {
+		switch todo.ID {
+		case "todo-1":
+			if !todo.Starred {
+				t.Error("after restart+refresh: todo-1 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("after restart+refresh: todo-1 should be focused")
+			}
+		case "todo-2":
+			if !todo.Focus {
+				t.Error("after restart+refresh: todo-2 should be focused")
+			}
+		case "todo-3":
+			if !todo.Starred {
+				t.Error("after restart+refresh: todo-3 should be starred")
+			}
+			if !todo.Focus {
+				t.Error("after restart+refresh: todo-3 should be focused")
+			}
+		}
+	}
+}
