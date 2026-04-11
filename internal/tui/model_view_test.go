@@ -560,3 +560,23 @@ func TestView_HelpOverlay_QuestionMarkShowsHelp(t *testing.T) {
 	v = m.View()
 	assertViewNotContains(t, v, "KEYBOARD SHORTCUTS")
 }
+
+func TestView_HelpOverlay_WideTerminalNotClipped(t *testing.T) {
+	m := newTestModel(t)
+
+	// Simulate a wide terminal (wider than ContentMaxWidth).
+	result, _ := m.Update(tea.WindowSizeMsg{Width: 200, Height: 50})
+	m = result.(Model)
+
+	// Open help overlay.
+	result, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = result.(Model)
+
+	v := m.View()
+	assertViewContains(t, v, "KEYBOARD SHORTCUTS")
+	// The right border must not be clipped by MaxWidth truncation.
+	assertViewContains(t, v, "╰")
+	assertViewContains(t, v, "╮")
+	// Descriptions must not be truncated.
+	assertViewContains(t, v, "Cycle expanded view (2-col / 1-col / collapse)")
+}

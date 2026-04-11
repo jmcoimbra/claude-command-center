@@ -940,10 +940,14 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 		{"?", "Toggle this help"},
 	}
 	sections = append(sections, s.SectionHeader.Render("  Global"), "")
+	keyStyle := lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true)
 	for _, sh := range global {
-		sections = append(sections, fmt.Sprintf("    %-20s %s",
-			lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
-			s.CalendarTime.Render(sh.desc)))
+		styledKey := keyStyle.Render(sh.key)
+		pad := 20 - lipgloss.Width(styledKey)
+		if pad < 1 {
+			pad = 1
+		}
+		sections = append(sections, "    "+styledKey+strings.Repeat(" ", pad)+s.CalendarTime.Render(sh.desc))
 	}
 
 	switch subView {
@@ -972,9 +976,12 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 		}
 		sections = append(sections, "", s.SectionHeader.Render("  Command Center"), "")
 		for _, sh := range cmds {
-			sections = append(sections, fmt.Sprintf("    %-20s %s",
-				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
-				s.CalendarTime.Render(sh.desc)))
+			styledKey := keyStyle.Render(sh.key)
+			pad := 20 - lipgloss.Width(styledKey)
+			if pad < 1 {
+				pad = 1
+			}
+			sections = append(sections, "    "+styledKey+strings.Repeat(" ", pad)+s.CalendarTime.Render(sh.desc))
 		}
 
 	case "detail":
@@ -994,13 +1001,16 @@ func renderHelpOverlay(s *ccStyles, subView string, width, height int) string {
 		}
 		sections = append(sections, "", s.SectionHeader.Render("  Todo Detail"), "")
 		for _, sh := range detail {
-			sections = append(sections, fmt.Sprintf("    %-20s %s",
-				lipgloss.NewStyle().Foreground(s.ColorWhite).Bold(true).Render(sh.key),
-				s.CalendarTime.Render(sh.desc)))
+			styledKey := keyStyle.Render(sh.key)
+			pad := 20 - lipgloss.Width(styledKey)
+			if pad < 1 {
+				pad = 1
+			}
+			sections = append(sections, "    "+styledKey+strings.Repeat(" ", pad)+s.CalendarTime.Render(sh.desc))
 		}
 	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, sections...)
-	box := s.PanelBorder.Width(50).Padding(1, 2).Render(content)
+	box := s.PanelBorder.Padding(1, 2).Render(content)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }

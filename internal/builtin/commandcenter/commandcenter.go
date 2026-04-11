@@ -691,7 +691,11 @@ func (p *Plugin) View(width, height, frame int) string {
 		if p.detailView {
 			helpView = "detail"
 		}
-		return renderHelpOverlay(&p.styles, helpView, width, height)
+		helpWidth := ui.ContentMaxWidth
+		if width > 0 && width < helpWidth {
+			helpWidth = width
+		}
+		return renderHelpOverlay(&p.styles, helpView, helpWidth, height)
 	}
 
 	return p.viewCommandTab(width, height)
