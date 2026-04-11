@@ -1,6 +1,7 @@
 package commandcenter
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -201,6 +202,44 @@ func TestView_ExpandedViewShowsTriageTabs(t *testing.T) {
 	viewContains(t, view, "ToDo")
 	viewContains(t, view, "Inbox")
 	viewContains(t, view, "Agents")
+}
+
+func TestView_ExpandedTwoColumnClampsToTerminalHeight(t *testing.T) {
+	// BUG-131: 2-column expanded view must not overflow the terminal height.
+	// Create enough todos to overflow if height clamping is wrong.
+	var todos []db.Todo
+	for i := 0; i < 40; i++ {
+		todos = append(todos, db.Todo{
+			ID:        fmt.Sprintf("t%d", i+1),
+			DisplayID: i + 1,
+			Title:     fmt.Sprintf("Todo item %d", i+1),
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		})
+	}
+	p := testPluginWithTodos(t, todos)
+
+	// Enter expanded 2-column view
+	p.HandleKey(keyMsg(" "))
+	if !p.ccExpanded || p.ccExpandedCols != 2 {
+		t.Fatal("space should expand to 2-col")
+	}
+
+	// Render at a specific height
+	termHeight := 38
+	view := p.View(120, termHeight, 0)
+
+	// Count lines in the rendered view
+	lines := strings.Split(view, "\n")
+	viewHeight := termHeight - 14 // TUI chrome
+	if len(lines) > viewHeight {
+		t.Errorf("expanded 2-column view has %d lines, exceeds available height %d (terminal=%d, chrome=14)", len(lines), viewHeight, termHeight)
+	}
+
+	// The hints bar must be visible in the output
+	viewContains(t, view, "filter")
+	viewContains(t, view, "navigate")
 }
 
 func TestView_TriageTabFiltersContent(t *testing.T) {

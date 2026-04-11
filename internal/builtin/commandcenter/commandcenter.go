@@ -534,12 +534,17 @@ func (p *Plugin) textareaWidth() int {
 }
 
 func (p *Plugin) expandedRowsPerCol() int {
-	// p.height is the content area (terminal height minus TUI header).
-	// The expanded view needs space for its own chrome:
-	// header(1) + tabBar(1) + blank(1) + columns + blank(1) + hints(1) + footer(1) = 6 lines,
-	// plus 2 lines buffer for optional loading/flash messages.
+	// p.height is the raw height from the TUI host.
+	// viewCommandTab subtracts 14 for TUI-level chrome (logo, nav tabs, etc.)
+	// so viewHeight = p.height - 14.
+	// The expanded view adds its own chrome:
+	// header(1) + tabBar(1) + blank(1) + columns + blank(1) + hints(1) + footer(1) = 6 lines.
 	// Each todo item takes 2 lines (title + details).
-	rows := (p.height - 8) / 2
+	viewHeight := p.height - 14
+	if viewHeight < 10 {
+		viewHeight = 10
+	}
+	rows := (viewHeight - 6) / 2
 	if rows < 3 {
 		rows = 3
 	}

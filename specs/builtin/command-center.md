@@ -209,7 +209,7 @@ Responses:
 3. Focus suggestion banner at top when available
 4. Warning bar when data is stale or services are unreachable
 5. Help overlay toggled with `?`
-6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 8) / 2` to maximize vertical space (the extra line accounts for the triage tab bar). Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
+6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(viewHeight - 6) / 2` where `viewHeight = height - 14` (TUI chrome) and 6 accounts for expanded-view chrome (header, tabBar, 2 blanks, hints, footer). This ensures the 2-column layout never overflows the terminal height. Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
 
 ### Todo Lifecycle
 
@@ -746,6 +746,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges
+- Expanded 2-column view clamps content to terminal height — total rendered lines never exceed viewHeight (prevents header/hint bar from being pushed off screen)
 - Detail view shows "TODO #N" title with display_id
 - Detail view tracks todo by ID (not index) — status changes don't jump to different todo
 - Detail view `enter` edits selected field (Status opens inline selector with backlog/blocked/completed/dismissed, Due opens text input, ProjectDir opens path picker)
