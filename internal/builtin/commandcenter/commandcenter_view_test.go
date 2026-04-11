@@ -58,16 +58,16 @@ func renderView(p *Plugin) string {
 // ---------------------------------------------------------------------------
 
 func TestView_TodoStatusNew(t *testing.T) {
-	// "new" status todos appear in the "inbox" triage tab when expanded
+	// "new" status todos appear in the "New" triage tab when expanded
 	p := testPluginWithTodos(t, []db.Todo{
 		{ID: "t1", Title: "Inbox item alpha", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
 	})
-	// Expand the view and switch to inbox tab
+	// Expand the view and switch to New tab
 	p.HandleKey(keyMsg(" "))
 	if !p.ccExpanded {
 		t.Fatal("space should expand the view")
 	}
-	// Default triage is "todo", switch to "inbox"
+	// Default triage is "focus", tab once to reach "new"
 	p.HandleKey(keyMsg("tab"))
 	view := renderView(p)
 	viewContains(t, view, "Inbox item alpha")
@@ -148,7 +148,8 @@ func TestView_TodoStatusDismissed(t *testing.T) {
 	viewNotContains(t, view, "Dismissed task juliet")
 	// Also check expanded view with "all" filter
 	p.HandleKey(keyMsg(" "))
-	// Cycle tabs to "all" (todo -> inbox -> agents -> review -> all)
+	// Cycle tabs to "all" (focus -> new -> backlog -> agents -> review -> all)
+	p.HandleKey(keyMsg("tab"))
 	p.HandleKey(keyMsg("tab"))
 	p.HandleKey(keyMsg("tab"))
 	p.HandleKey(keyMsg("tab"))
@@ -203,9 +204,11 @@ func TestView_ExpandedViewShowsTriageTabs(t *testing.T) {
 	p.HandleKey(keyMsg(" "))
 	view := renderView(p)
 	viewContains(t, view, "Focus")
-	viewContains(t, view, "Inbox")
+	viewContains(t, view, "New")
+	viewContains(t, view, "Backlog")
 	viewContains(t, view, "Agents")
 	viewNotContains(t, view, "ToDo")
+	viewNotContains(t, view, "Inbox")
 }
 
 func TestView_ExpandedTwoColumnClampsToTerminalHeight(t *testing.T) {
@@ -259,14 +262,15 @@ func TestView_TriageTabFiltersContent(t *testing.T) {
 	viewContains(t, focusView, "Backlog lima")
 	viewNotContains(t, focusView, "Inbox mike")
 
-	// Switch to inbox tab (focus -> inbox)
+	// Switch to New tab (focus -> new)
 	p.HandleKey(keyMsg("tab"))
-	inboxView := renderView(p)
-	viewContains(t, inboxView, "Inbox mike")
-	viewNotContains(t, inboxView, "Backlog lima")
+	newView := renderView(p)
+	viewContains(t, newView, "Inbox mike")
+	viewNotContains(t, newView, "Backlog lima")
 
-	// Switch to agents tab (inbox -> agents)
-	p.HandleKey(keyMsg("tab"))
+	// Switch to agents tab (new -> backlog -> agents)
+	p.HandleKey(keyMsg("tab")) // new -> backlog
+	p.HandleKey(keyMsg("tab")) // backlog -> agents
 	agentView := renderView(p)
 	viewContains(t, agentView, "Running november")
 	viewNotContains(t, agentView, "Backlog lima")
@@ -593,7 +597,8 @@ func TestView_ExpandedAgentsHeaderShowsCounts(t *testing.T) {
 
 	// Expand and switch to agents tab
 	p.HandleKey(keyMsg(" "))
-	// tab from "todo" -> "inbox" -> "agents"
+	// tab from "focus" -> "new" -> "backlog" -> "agents"
+	p.HandleKey(keyMsg("tab"))
 	p.HandleKey(keyMsg("tab"))
 	p.HandleKey(keyMsg("tab"))
 
@@ -1636,24 +1641,24 @@ func TestView_StarringInboxItemMovesToFocusTab(t *testing.T) {
 		{ID: "t1", Title: "Triage me", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
 	})
 
-	// Expand and switch to inbox tab (focus -> inbox)
+	// Expand and switch to New tab (focus -> new)
 	p.HandleKey(keyMsg(" "))
 	p.HandleKey(keyMsg("tab"))
-	inboxView := renderView(p)
-	viewContains(t, inboxView, "Inbox (1)")
-	viewContains(t, inboxView, "Triage me")
+	newView := renderView(p)
+	viewContains(t, newView, "New (1)")
+	viewContains(t, newView, "Triage me")
 
-	// Star the item while on the inbox tab — opens schedule modal
+	// Star the item while on the New tab — opens schedule modal
 	p.HandleKey(keyMsg("s"))
 
 	// Dismiss the schedule modal to see the underlying view
 	p.HandleKey(specialKeyMsg(tea.KeyEsc))
 
 	// The item's status should now be "backlog" (accepted) with Focus=true, so it should
-	// no longer appear in the inbox tab — inbox count drops to 0, focus gains it.
-	inboxAfterStar := renderView(p)
-	viewContains(t, inboxAfterStar, "Inbox (0)")
-	viewContains(t, inboxAfterStar, "Focus (1)")
+	// no longer appear in the New tab — New count drops to 0, focus gains it.
+	newAfterStar := renderView(p)
+	viewContains(t, newAfterStar, "New (0)")
+	viewContains(t, newAfterStar, "Focus (1)")
 
 	// Switch to focus tab and verify the item appears there
 	p.triageFilter = "focus"
@@ -1665,7 +1670,7 @@ func TestView_StarringInboxItemMovesToFocusTab(t *testing.T) {
 // Backlog Toggle (BUG-135)
 // ---------------------------------------------------------------------------
 
-func TestView_BacklogToggleShowsCompletedItems(t *testing.T) {
+func TestView_BacklogTabShowsCompletedItems(t *testing.T) {
 	now := time.Now()
 	doneAt := now.Add(-time.Hour)
 	p := testPluginWithTodos(t, []db.Todo{
@@ -1674,49 +1679,29 @@ func TestView_BacklogToggleShowsCompletedItems(t *testing.T) {
 		{ID: "t3", Title: "Dismissed task charlie", Status: db.StatusDismissed, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
 	})
 
-	// Before toggle: active items visible, completed not in main list
+	// Before b key: collapsed view shows starred active items
 	view := renderView(p)
 	viewContains(t, view, "Active task alpha")
 	viewContains(t, view, "TODOS")
 
-	// Toggle backlog on
+	// Press b to jump to Backlog tab
 	p.HandleKey(keyMsg("b"))
-	if !p.showBacklog {
-		t.Fatal("b should set showBacklog to true")
+	if !p.ccExpanded {
+		t.Fatal("b should expand the view")
+	}
+	if p.triageFilter != "backlog" {
+		t.Fatalf("b should set triageFilter to 'backlog', got %q", p.triageFilter)
 	}
 
 	view = renderView(p)
 	// Completed items should be visible
 	viewContains(t, view, "Completed task bravo")
 	viewContains(t, view, "Dismissed task charlie")
-	// Active items should NOT be in the backlog view
+	// Active items should NOT be in the backlog tab
 	viewNotContains(t, view, "Active task alpha")
-	// Header should say BACKLOG
-	viewContains(t, view, "BACKLOG")
 }
 
-func TestView_BacklogToggleBack(t *testing.T) {
-	now := time.Now()
-	doneAt := now.Add(-time.Hour)
-	p := testPluginWithTodos(t, []db.Todo{
-		{ID: "t1", Title: "Active task delta", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
-		{ID: "t2", Title: "Completed task echo", Status: db.StatusCompleted, Source: "manual", CreatedAt: now, CompletedAt: &doneAt},
-	})
-
-	// Toggle on then off
-	p.HandleKey(keyMsg("b"))
-	p.HandleKey(keyMsg("b"))
-	if p.showBacklog {
-		t.Fatal("second b should toggle showBacklog back to false")
-	}
-
-	view := renderView(p)
-	viewContains(t, view, "Active task delta")
-	viewContains(t, view, "TODOS")
-	viewNotContains(t, view, "BACKLOG")
-}
-
-func TestView_BacklogToggleResetsCursor(t *testing.T) {
+func TestView_BacklogTabResetsCursor(t *testing.T) {
 	now := time.Now()
 	doneAt := now.Add(-time.Hour)
 	p := testPluginWithTodos(t, []db.Todo{
@@ -1731,27 +1716,27 @@ func TestView_BacklogToggleResetsCursor(t *testing.T) {
 		t.Fatalf("expected cursor at 1, got %d", p.ccCursor)
 	}
 
-	// Toggle backlog — cursor should reset to 0
+	// Press b — cursor should reset to 0
 	p.HandleKey(keyMsg("b"))
 	if p.ccCursor != 0 {
-		t.Fatalf("expected cursor reset to 0 after backlog toggle, got %d", p.ccCursor)
+		t.Fatalf("expected cursor reset to 0 after b key, got %d", p.ccCursor)
 	}
 }
 
-func TestView_BacklogEmptyState(t *testing.T) {
+func TestView_BacklogTabEmptyState(t *testing.T) {
 	now := time.Now()
 	p := testPluginWithTodos(t, []db.Todo{
 		{ID: "t1", Title: "Only active", Status: db.StatusBacklog, Source: "manual", CreatedAt: now, Starred: true},
 	})
 
-	// Toggle backlog on — no completed items
+	// Press b to jump to backlog — no completed items
 	p.HandleKey(keyMsg("b"))
 	view := renderView(p)
-	viewContains(t, view, "BACKLOG (0 completed)")
-	viewContains(t, view, "No completed items")
+	// Should show "No active todos" (expanded view empty state)
+	viewContains(t, view, "No active todos")
 }
 
-func TestView_BacklogHeaderShowsCount(t *testing.T) {
+func TestView_BacklogTabCountInTabBar(t *testing.T) {
 	now := time.Now()
 	doneAt := now.Add(-time.Hour)
 	p := testPluginWithTodos(t, []db.Todo{
@@ -1762,7 +1747,8 @@ func TestView_BacklogHeaderShowsCount(t *testing.T) {
 
 	p.HandleKey(keyMsg("b"))
 	view := renderView(p)
-	viewContains(t, view, "BACKLOG (2 completed)")
+	// Tab bar should show Backlog count
+	viewContains(t, view, "Backlog (2)")
 }
 
 // ---------------------------------------------------------------------------
@@ -1894,7 +1880,7 @@ func TestView_CollapsedStarPrefixWidthOverflow(t *testing.T) {
 	}
 
 	todos := []db.Todo{todo}
-	rendered := renderTodoPanel(&p.styles, &p.grad, todos, nil, 0, 0, 5, contentWidth, 0, "", nil, 3, false)
+	rendered := renderTodoPanel(&p.styles, &p.grad, todos, 0, 0, 5, contentWidth, 0, "", nil, 3)
 
 	// Find the line with "153."
 	for _, line := range strings.Split(rendered, "\n") {
@@ -2013,7 +1999,7 @@ func TestView_NoToDoTabInExpandedView(t *testing.T) {
 }
 
 // TestView_FocusTabOrderCycles verifies the tab cycling order:
-// Focus -> Inbox -> Agents -> Review -> All -> Focus (wraps)
+// Focus -> New -> Backlog -> Agents -> Review -> All -> Focus (wraps)
 func TestView_FocusTabOrderCycles(t *testing.T) {
 	p := testPluginWithTodos(t, []db.Todo{
 		{ID: "t1", Title: "Task one", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true},
@@ -2025,12 +2011,17 @@ func TestView_FocusTabOrderCycles(t *testing.T) {
 	}
 
 	// Tab through the order
-	p.HandleKey(keyMsg("tab")) // focus -> inbox
-	if p.triageFilter != "inbox" {
-		t.Errorf("expected 'inbox', got %q", p.triageFilter)
+	p.HandleKey(keyMsg("tab")) // focus -> new
+	if p.triageFilter != "new" {
+		t.Errorf("expected 'new', got %q", p.triageFilter)
 	}
 
-	p.HandleKey(keyMsg("tab")) // inbox -> agents
+	p.HandleKey(keyMsg("tab")) // new -> backlog
+	if p.triageFilter != "backlog" {
+		t.Errorf("expected 'backlog', got %q", p.triageFilter)
+	}
+
+	p.HandleKey(keyMsg("tab")) // backlog -> agents
 	if p.triageFilter != "agents" {
 		t.Errorf("expected 'agents', got %q", p.triageFilter)
 	}

@@ -504,21 +504,22 @@ func TestPromoteTodo(t *testing.T) {
 	}
 }
 
-func TestToggleBacklog(t *testing.T) {
+func TestBacklogJumpsToTab(t *testing.T) {
 	p := testPluginWithCC(t)
 
-	if p.showBacklog {
-		t.Fatal("initial showBacklog should be false")
+	if p.ccExpanded {
+		t.Fatal("initial view should not be expanded")
 	}
 
 	p.HandleKey(keyMsg("b"))
-	if !p.showBacklog {
-		t.Error("after b: showBacklog should be true")
+	if !p.ccExpanded {
+		t.Error("after b: view should be expanded")
 	}
-
-	p.HandleKey(keyMsg("b"))
-	if p.showBacklog {
-		t.Error("after b b: showBacklog should be false")
+	if p.triageFilter != "backlog" {
+		t.Errorf("after b: triageFilter should be 'backlog', got %q", p.triageFilter)
+	}
+	if p.ccCursor != 0 {
+		t.Errorf("after b: cursor should be 0, got %d", p.ccCursor)
 	}
 }
 
@@ -1721,8 +1722,8 @@ func TestYKeyInTriageFilterDoesNotPanic(t *testing.T) {
 	if !p.ccExpanded {
 		t.Fatal("expected expanded view")
 	}
-	// Set filter to "inbox" — only t-new-1 and t-new-2 should be visible
-	p.triageFilter = "inbox"
+	// Set filter to "new" — only t-new-1 and t-new-2 should be visible
+	p.triageFilter = "new"
 	p.ccCursor = 0
 
 	filtered := p.filteredTodos()
@@ -2313,7 +2314,8 @@ func TestBUG116_RunningTodoVisibleInExpandedAgentsTab(t *testing.T) {
 	if !p.ccExpanded {
 		t.Fatal("expected expanded view")
 	}
-	// Cycle to "agents" tab: todo -> inbox -> agents
+	/// Cycle to "agents" tab: focus -> new -> backlog -> agents
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
 	p.HandleKey(specialKeyMsg(tea.KeyTab))
 	p.HandleKey(specialKeyMsg(tea.KeyTab))
 	if p.triageFilter != "agents" {

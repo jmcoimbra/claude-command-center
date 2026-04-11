@@ -72,7 +72,6 @@ type Plugin struct {
 	ccLastWrite    time.Time // last DB mutation; suppresses reload during write cooldown
 	ccCursor       int
 	ccScrollOffset int
-	showBacklog    bool
 	ccExpanded       bool
 	ccExpandedCols   int // 0 = use default (2), 1 = single column, 2 = two columns
 	ccExpandedOffset int
@@ -291,7 +290,7 @@ func (p *Plugin) KeyBindings() []plugin.KeyBinding {
 		{Key: "/", Description: "Search/filter todos"},
 		{Key: "y", Description: "Accept todo (triage)"},
 		{Key: "tab", Description: "Cycle triage filter (expanded)"},
-		{Key: "b", Description: "Toggle completed backlog"},
+		{Key: "b", Description: "Jump to Backlog tab"},
 		{Key: "r", Description: "Refresh from all sources"},
 		{Key: "gi/gu", Description: "Go to inbox (list view)"},
 	}
@@ -580,29 +579,9 @@ func (p *Plugin) expandedNumCols() int {
 }
 
 // filteredTodos returns the subset of todos based on the current view mode, triage filter, and search query.
-// When showBacklog is true, returns completed/dismissed items instead of active ones.
 func (p *Plugin) filteredTodos() []db.Todo {
 	if p.cc == nil {
 		return nil
-	}
-
-	// Backlog mode: return completed/dismissed items (with search filter).
-	if p.showBacklog {
-		result := p.cc.CompletedTodos()
-		query := strings.TrimSpace(p.searchInput.Value())
-		if query == "" {
-			return result
-		}
-		lower := strings.ToLower(query)
-		var filtered []db.Todo
-		for _, t := range result {
-			titleMatch := strings.Contains(strings.ToLower(flattenTitle(t.Title)), lower)
-			idMatch := query == fmt.Sprintf("%d", t.DisplayID)
-			if titleMatch || idMatch {
-				filtered = append(filtered, t)
-			}
-		}
-		return filtered
 	}
 
 	allActive := p.cc.ActiveTodos()
@@ -630,12 +609,15 @@ func (p *Plugin) filteredTodos() []db.Todo {
 					result = append(result, t)
 				}
 			}
-		case "inbox":
+		case "new":
 			for _, t := range allActive {
 				if t.Status == db.StatusNew {
 					result = append(result, t)
 				}
 			}
+		case "backlog":
+			// Backlog tab: show completed/dismissed items.
+			result = p.cc.CompletedTodos()
 		case "agents":
 			for _, t := range allActive {
 				if t.Status == db.StatusEnqueued || t.Status == db.StatusRunning || t.Status == db.StatusBlocked {
@@ -676,12 +658,13 @@ func (p *Plugin) filteredTodos() []db.Todo {
 // triageCounts returns the count of todos matching each filter category.
 func (p *Plugin) triageCounts() map[string]int {
 	counts := map[string]int{
-		"focus":  0,
-		"todo":   0,
-		"inbox":  0,
-		"agents": 0,
-		"review": 0,
-		"all":    0,
+		"focus":   0,
+		"todo":    0,
+		"new":     0,
+		"backlog": 0,
+		"agents":  0,
+		"review":  0,
+		"all":     0,
 	}
 	if p.cc == nil {
 		return counts
@@ -695,12 +678,16 @@ func (p *Plugin) triageCounts() map[string]int {
 		case db.StatusBacklog:
 			counts["todo"]++
 		case db.StatusNew:
-			counts["inbox"]++
+			counts["new"]++
 		case db.StatusEnqueued, db.StatusRunning, db.StatusBlocked:
 			counts["agents"]++
 		case db.StatusReview, db.StatusFailed:
 			counts["review"]++
 		}
+	}
+	// Backlog count comes from completed/dismissed items
+	if p.cc != nil {
+		counts["backlog"] = len(p.cc.CompletedTodos())
 	}
 	return counts
 }
@@ -877,7 +864,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		return view
 	}
 
-	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
+	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
 
 	if p.claudeLoading {
 		elapsed := time.Since(p.claudeLoadingAt).Truncate(time.Second)
