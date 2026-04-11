@@ -140,29 +140,33 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		summarySection = lipgloss.JoinVertical(lipgloss.Left, "", summaryHeader, "", summaryBody)
 	}
 
-	// Detail section — full, no truncation
+	// Detail section — full, no truncation, with markdown rendering
 	var detailSection string
 	if todo.Detail != "" {
 		detailHeader := s.SectionHeader.Render("  DETAIL")
 		wrapped := wrapText(todo.Detail, innerWidth-6)
+		bodyStyle := lipgloss.NewStyle().Foreground(s.ColorWhite)
+		rendered := renderMarkdown(wrapped, s.SectionHeader, bodyStyle, s.DescMuted)
 		var detailLines []string
-		for _, line := range strings.Split(wrapped, "\n") {
+		for _, line := range strings.Split(rendered, "\n") {
 			detailLines = append(detailLines, "   "+line)
 		}
-		detailBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(detailLines, "\n"))
+		detailBody := strings.Join(detailLines, "\n")
 		detailSection = lipgloss.JoinVertical(lipgloss.Left, "", detailHeader, "", detailBody)
 	}
 
-	// Prompt section — full, no truncation
+	// Prompt section — full, no truncation, with markdown rendering
 	var promptSection string
 	if todo.ProposedPrompt != "" {
 		promptHeader := s.SectionHeader.Render("  PROMPT")
 		wrapped := wrapText(todo.ProposedPrompt, innerWidth-6)
+		bodyStyle := lipgloss.NewStyle().Foreground(s.ColorWhite)
+		rendered := renderMarkdown(wrapped, s.SectionHeader, bodyStyle, s.DescMuted)
 		var promptLines []string
-		for _, line := range strings.Split(wrapped, "\n") {
+		for _, line := range strings.Split(rendered, "\n") {
 			promptLines = append(promptLines, "   "+line)
 		}
-		promptBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(promptLines, "\n"))
+		promptBody := strings.Join(promptLines, "\n")
 		promptSection = lipgloss.JoinVertical(lipgloss.Left, "", promptHeader, "", promptBody)
 	} else {
 		promptSection = "\n  " + s.SectionHeader.Render("PROMPT") + "  " + s.DescMuted.Render("(no prompt set)")

@@ -603,9 +603,9 @@ Completed sessions (`session_status == "review"` or `"failed"`) show:
 - **In the expanded view triage tabs**: the "Review" and "Blocked" tabs filter todos by `session_status`
 
 
-#### Session Summary Markdown Rendering
+#### Detail View Markdown Rendering
 
-The `SESSION SUMMARY` section renders agent-authored markdown as structured TUI content using a simple line-by-line renderer (`ui.RenderMarkdown`). The renderer handles:
+The `SESSION SUMMARY`, `DETAIL`, and `PROMPT` sections in the detail view render markdown content as structured TUI content using a simple line-by-line renderer (`ui.RenderMarkdown`). The renderer handles:
 
 - **`## Heading` lines**: Rendered as bold cyan section headers (using `SectionHeader` style). The `## ` prefix is stripped.
 - **`- bullet` lines**: Rendered with a `  • ` prefix (indented bullet character). The `- ` prefix is replaced.

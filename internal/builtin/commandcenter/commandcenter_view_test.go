@@ -1629,6 +1629,153 @@ func TestView_DetailSessionSummaryRendersInlineCodeWithoutBackticks(t *testing.T
 	viewNotContains(t, view, "`slack_send_message`")
 }
 
+// Detail Markdown Rendering (BUG-145)
+// ---------------------------------------------------------------------------
+
+func TestView_DetailDetailSectionRendersHeadingsWithoutPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:        "t1",
+			Title:     "Detail markdown test",
+			Status:    db.StatusReview,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+			Starred:   true,
+			Detail:    "## Overview\n- First point\n- Second point\n\n## Next steps\n- Do the thing",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	// DETAIL header should be present
+	viewContains(t, view, "DETAIL")
+	// Heading text should be present
+	viewContains(t, view, "Overview")
+	viewContains(t, view, "Next steps")
+	// Raw ## prefix should NOT be visible
+	viewNotContains(t, view, "## Overview")
+	viewNotContains(t, view, "## Next steps")
+}
+
+func TestView_DetailDetailSectionRendersBulletsWithoutDashPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:        "t1",
+			Title:     "Detail bullet test",
+			Status:    db.StatusReview,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+			Starred:   true,
+			Detail:    "- Alpha item\n- Beta item",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	viewContains(t, view, "Alpha item")
+	viewContains(t, view, "Beta item")
+	// Bullet character should be present
+	viewContains(t, view, "\u2022")
+}
+
+func TestView_DetailDetailSectionRendersInlineCodeWithoutBackticks(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:        "t1",
+			Title:     "Detail code test",
+			Status:    db.StatusReview,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+			Starred:   true,
+			Detail:    "- Check `config.yaml` for settings",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	viewContains(t, view, "config.yaml")
+	viewNotContains(t, view, "`config.yaml`")
+}
+
+// Prompt Markdown Rendering (BUG-145)
+// ---------------------------------------------------------------------------
+
+func TestView_DetailPromptRendersHeadingsWithoutPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Prompt markdown test",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			ProposedPrompt: "## Instructions\n- Read the spec\n- Implement changes\n\n## Constraints\n- No breaking changes",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	// PROMPT header should be present
+	viewContains(t, view, "PROMPT")
+	// Heading text should be present
+	viewContains(t, view, "Instructions")
+	viewContains(t, view, "Constraints")
+	// Raw ## prefix should NOT be visible
+	viewNotContains(t, view, "## Instructions")
+	viewNotContains(t, view, "## Constraints")
+}
+
+func TestView_DetailPromptRendersBulletsWithoutDashPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Prompt bullet test",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			ProposedPrompt: "- Read the spec\n- Write the code",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	viewContains(t, view, "Read the spec")
+	viewContains(t, view, "Write the code")
+	viewContains(t, view, "\u2022")
+}
+
+func TestView_DetailPromptRendersInlineCodeWithoutBackticks(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Prompt code test",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			ProposedPrompt: "- Run `make test` before committing",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	viewContains(t, view, "make test")
+	viewNotContains(t, view, "`make test`")
+}
+
 func TestView_StarringInboxItemMovesToFocusTab(t *testing.T) {
 	// BUG-137: Starring an inbox item should accept it (new -> backlog)
 	// and set Focus=true, moving it from the Inbox tab to the Focus tab.
