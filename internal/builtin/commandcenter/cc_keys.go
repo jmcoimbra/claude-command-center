@@ -874,12 +874,12 @@ func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
 			// Schedule another block
 			p.scheduleModalState = "picker"
 			p.scheduleModalCursor = 2
-			return plugin.NoopAction()
+			return plugin.ConsumedAction()
 		case "esc":
 			p.scheduleModalActive = false
-			return plugin.NoopAction()
+			return plugin.ConsumedAction()
 		}
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	}
 
 	// Picker state
@@ -888,13 +888,13 @@ func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
 		if p.scheduleModalCursor > 0 {
 			p.scheduleModalCursor--
 		}
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 
 	case "down", "j":
 		if p.scheduleModalCursor < len(bookingDurations)-1 {
 			p.scheduleModalCursor++
 		}
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 
 	case "enter":
 		todoID := p.scheduleModalTodoID
@@ -911,14 +911,14 @@ func (p *Plugin) handleScheduleModal(msg tea.KeyMsg) plugin.Action {
 		}
 		p.flashMessage = fmt.Sprintf("Booking %dm for %s...", dur, title)
 		p.flashMessageAt = time.Now()
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: scheduleBlockCmd(p, todoID, title, dur)}
+		return plugin.Action{Type: plugin.ActionConsumed, TeaCmd: scheduleBlockCmd(p, todoID, title, dur)}
 
 	case "esc":
 		p.scheduleModalActive = false
-		return plugin.NoopAction()
+		return plugin.ConsumedAction()
 	}
 
-	return plugin.NoopAction()
+	return plugin.ConsumedAction()
 }
 
 func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {

@@ -212,7 +212,7 @@ The `S` key from the command tab or detail view also opens the schedule modal (a
 
 **Rendering:**
 
-The modal is a centered lipgloss box with a border, rendered via `lipgloss.Place` within the `viewHeight` budget (the same vertical space used by the todo list). The modal must NOT add lines beyond `viewHeight` — using the full `height` (which includes the plugin's internal overhead of 14 lines) would cause the total rendered output to exceed the TUI host's content allocation, producing ghost artifacts (duplicated headers, shifted masthead) in bubbletea's differential renderer. The modal intercepts all key input when active (checked early in `HandleKey`).
+The modal is a centered lipgloss box with a border, rendered via `lipgloss.Place` within the `viewHeight` budget (the same vertical space used by the todo list). The modal must NOT add lines beyond `viewHeight` — using the full `height` (which includes the plugin's internal overhead of 14 lines) would cause the total rendered output to exceed the TUI host's content allocation, producing ghost artifacts (duplicated headers, shifted masthead) in bubbletea's differential renderer. The modal intercepts all key input when active (checked early in `HandleKey`). Unhandled keys return `ConsumedAction()` (not `NoopAction()`) to prevent the host from processing them (e.g., Tab switching host-level tabs while the modal is showing).
 
 ### Unstar Confirm Mode
 

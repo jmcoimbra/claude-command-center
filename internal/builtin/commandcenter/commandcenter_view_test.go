@@ -2508,3 +2508,158 @@ func TestView_BUG148_ScheduleModalCollapsedLineCount(t *testing.T) {
 			linesBefore, linesAfter, linesAfter-linesBefore)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// BUG-146: Schedule modal must consume all keys
+// ---------------------------------------------------------------------------
+
+func TestView_BUG146_ScheduleModalConsumesAllKeys(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Star me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star the todo to open the schedule modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("starring should open the schedule modal")
+	}
+
+	// Press Tab while modal is active — must return ConsumedAction, not NoopAction
+	action := p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("schedule modal should return ConsumedAction for Tab, got %q", action.Type)
+	}
+
+	// Press Shift+Tab while modal is active — must also return ConsumedAction
+	action = p.HandleKey(specialKeyMsg(tea.KeyShiftTab))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("schedule modal should return ConsumedAction for Shift+Tab, got %q", action.Type)
+	}
+
+	// Press an arbitrary unhandled key while modal is active — must return ConsumedAction
+	action = p.HandleKey(keyMsg("x"))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("schedule modal should return ConsumedAction for unhandled key 'x', got %q", action.Type)
+	}
+
+	// Modal should still be active (none of the above should dismiss it)
+	if !p.scheduleModalActive {
+		t.Error("modal should still be active after unhandled keys")
+	}
+
+	// Press Esc to dismiss — should also return ConsumedAction
+	action = p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("schedule modal esc should return ConsumedAction, got %q", action.Type)
+	}
+	if p.scheduleModalActive {
+		t.Error("modal should be dismissed after esc")
+	}
+}
+
+// BUG-146: Verify that after schedule modal dismiss, triage filter works correctly.
+func TestView_BUG146_FilterWorksAfterModalDismiss(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Focused item", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true, Starred: true},
+		{ID: "t2", Title: "Unfocused inbox", Status: db.StatusNew, Source: "github", CreatedAt: time.Now()},
+		{ID: "t3", Title: "Star me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 2
+
+	// Star t3 — opens schedule modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("modal should be open")
+	}
+
+	// Dismiss with Esc
+	p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if p.scheduleModalActive {
+		t.Fatal("modal should be closed")
+	}
+
+	// Switch to focus tab via Tab key cycling
+	// From "all" -> "focus" (wraps around)
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if p.triageFilter != "focus" {
+		t.Fatalf("expected triageFilter 'focus' after tab from 'all', got %q", p.triageFilter)
+	}
+
+	// filteredTodos should only return focused items
+	filtered := p.filteredTodos()
+	// t1 was already focused, t3 just got starred+focused
+	for _, ft := range filtered {
+		if !ft.Focus {
+			t.Errorf("focus filter returned non-focus item: %q (Focus=%v)", ft.Title, ft.Focus)
+		}
+	}
+
+	// Switch to new tab
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if p.triageFilter != "new" {
+		t.Fatalf("expected 'new', got %q", p.triageFilter)
+	}
+
+	filtered = p.filteredTodos()
+	if len(filtered) != 1 || filtered[0].ID != "t2" {
+		t.Errorf("inbox filter should return 1 item (t2), got %d items", len(filtered))
+	}
+
+	// Verify the view renders correctly with focus filter
+	p.triageFilter = "focus"
+	view := renderView(p)
+	viewContains(t, view, "Focused item")
+	viewContains(t, view, "Star me") // t3 is now focused after starring
+	viewNotContains(t, view, "Unfocused inbox")
+}
+
+// BUG-146: Schedule modal in "booked" state should also return ConsumedAction.
+func TestView_BUG146_BookedStateConsumesAllKeys(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Book me", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Star to open modal
+	p.HandleKey(keyMsg("s"))
+
+	// Simulate booking completion
+	p.HandleMessage(bookingCompleteMsg{
+		todoID:    "t1",
+		startTime: time.Date(2026, 4, 11, 14, 30, 0, 0, time.Local),
+		endTime:   time.Date(2026, 4, 11, 15, 30, 0, 0, time.Local),
+		duration:  60,
+	})
+
+	if p.scheduleModalState != "booked" {
+		t.Fatalf("expected booked state, got %q", p.scheduleModalState)
+	}
+
+	// Tab in booked state should return ConsumedAction
+	action := p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("booked state should return ConsumedAction for Tab, got %q", action.Type)
+	}
+
+	// Arbitrary key in booked state should return ConsumedAction
+	action = p.HandleKey(keyMsg("x"))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("booked state should return ConsumedAction for unhandled key, got %q", action.Type)
+	}
+
+	// Esc in booked state should dismiss and return ConsumedAction
+	action = p.HandleKey(specialKeyMsg(tea.KeyEsc))
+	if action.Type != plugin.ActionConsumed {
+		t.Errorf("booked esc should return ConsumedAction, got %q", action.Type)
+	}
+	if p.scheduleModalActive {
+		t.Error("modal should be dismissed")
+	}
+}
