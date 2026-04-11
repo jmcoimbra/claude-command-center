@@ -184,6 +184,11 @@ type Plugin struct {
 	// Sub-view identifier (currently only "command")
 	subView string
 
+	// Focus & Star state
+	scheduleOfferMode    bool   // true when waiting for user to press S or skip after starring
+	unstarConfirmMode    bool   // true when waiting for y/n to confirm releasing calendar blocks
+	unstarConfirmTodoID  string // ID of the todo awaiting unstar confirmation
+
 	// Dimensions
 	width, height int
 	frame         int

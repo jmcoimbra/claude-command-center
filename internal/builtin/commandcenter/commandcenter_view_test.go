@@ -1237,3 +1237,132 @@ func TestView_CalendarEventDurationOnSameLine(t *testing.T) {
 		t.Fatalf("expected to find 'Team Standup Meeting' in view but did not.\nFull view:\n%s", view)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Focus & Star View Tests
+// ---------------------------------------------------------------------------
+
+// TestView_CollapsedShowsOnlyStarred: the collapsed view should show only starred todos,
+// not all non-new todos. Non-starred todos should be hidden.
+func TestView_CollapsedShowsOnlyStarred(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred task alpha", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+		{ID: "t2", Title: "Unstarred task beta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+		{ID: "t3", Title: "Focused not starred gamma", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: true},
+	})
+
+	// Ensure collapsed (not expanded)
+	if p.ccExpanded {
+		t.Fatal("plugin should start collapsed")
+	}
+
+	view := renderView(p)
+
+	// Starred item should appear
+	viewContains(t, view, "Starred task alpha")
+	// Non-starred, non-focused items should NOT appear in collapsed view
+	viewNotContains(t, view, "Unstarred task beta")
+	// Focused-but-not-starred should NOT appear in collapsed view
+	viewNotContains(t, view, "Focused not starred gamma")
+	// Yellow star indicator should appear for the starred item
+	viewContains(t, view, "★")
+}
+
+// TestView_CollapsedEmptyNudge: when no todos are starred, the collapsed view
+// should show a nudge message instead of an empty list.
+func TestView_CollapsedEmptyNudge(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Unstarred task delta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false},
+		{ID: "t2", Title: "Another unstarred task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false},
+	})
+
+	// Ensure collapsed
+	if p.ccExpanded {
+		t.Fatal("plugin should start collapsed")
+	}
+
+	view := renderView(p)
+
+	// Nudge message should be visible
+	viewContains(t, view, "No starred items")
+	// The unstarred todos should NOT appear
+	viewNotContains(t, view, "Unstarred task delta")
+	viewNotContains(t, view, "Another unstarred task")
+}
+
+// TestView_FocusTabShowsFocused: the expanded "focus" triage tab should show
+// all focused items (both starred and focused-but-not-starred).
+func TestView_FocusTabShowsFocused(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred item epsilon", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+		{ID: "t2", Title: "Focused not starred zeta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: true},
+		{ID: "t3", Title: "Not focused eta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+	})
+
+	// Expand the view
+	p.HandleKey(keyMsg(" "))
+	if !p.ccExpanded {
+		t.Fatal("space should expand the view")
+	}
+
+	// Navigate to the "focus" tab — it should be the first tab in the new order
+	// Tab order: focus, todo, inbox, agents, review, all
+	// Default is "todo", so we may need to navigate to "focus"
+	// Press shift+tab to go backward to "focus" if it's the first tab
+	p.HandleKey(specialKeyMsg(tea.KeyShiftTab))
+	view := renderView(p)
+
+	// Both starred and focused-but-not-starred should appear
+	viewContains(t, view, "Starred item epsilon")
+	viewContains(t, view, "Focused not starred zeta")
+	// Non-focused item should NOT appear in focus tab
+	viewNotContains(t, view, "Not focused eta")
+}
+
+// TestView_StarIndicators: starred items show yellow star (★), focused-but-not-starred
+// items show gray star (☆) in expanded views.
+func TestView_StarIndicators(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred theta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+		{ID: "t2", Title: "Focused only iota", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: true},
+		{ID: "t3", Title: "Plain kappa", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+	})
+
+	// Expand to show all items with focus tab
+	p.HandleKey(keyMsg(" "))
+	if !p.ccExpanded {
+		t.Fatal("space should expand")
+	}
+	// Navigate to "all" tab to see all items
+	// Cycle through tabs until we reach "all": tab order is focus, todo, inbox, agents, review, all
+	// Default tab is "todo", so we need to cycle forward: agents -> review -> all or
+	// backward: focus <- todo
+	// Let's cycle to "all" by pressing tab multiple times
+	for i := 0; i < 5; i++ {
+		p.HandleKey(keyMsg("tab"))
+	}
+	view := renderView(p)
+
+	// Starred item should show yellow star ★
+	viewContains(t, view, "★")
+	// Focused-only item should show gray star ☆
+	viewContains(t, view, "☆")
+}
+
+// TestView_SchedulingOffer: after starring a todo, the flash message should show
+// a scheduling offer prompt.
+func TestView_SchedulingOffer(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Task to star lambda", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false},
+	})
+
+	// Press 's' to star the todo
+	p.HandleKey(keyMsg("s"))
+
+	// The scheduling offer flash should appear in the view
+	view := renderView(p)
+
+	// After starring, the flash should mention scheduling
+	// The spec says: "★ <title> — Schedule time? S = yes, any key = skip"
+	viewContains(t, view, "Schedule time")
+}

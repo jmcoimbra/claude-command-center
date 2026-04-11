@@ -204,6 +204,49 @@ func DBUpdateTodoSourceContext(db *sql.DB, id, sourceContext, sourceContextAt st
 }
 
 // ---------------------------------------------------------------------------
+// Write methods -- Focus & Star
+// ---------------------------------------------------------------------------
+
+// DBSetTodoStar sets the starred field (and focus=true when starring) on a todo.
+// Stub: not yet implemented — will update starred and focus columns.
+func DBSetTodoStar(db *sql.DB, id string, starred bool) error {
+	// Stub
+	return nil
+}
+
+// DBSetTodoFocus sets the focus field on a todo.
+// Stub: not yet implemented — will update focus column.
+func DBSetTodoFocus(db *sql.DB, id string, focus bool) error {
+	// Stub
+	return nil
+}
+
+// DBClearStarAndFocus clears both starred and focus on a todo (used on complete/dismiss).
+// Stub: not yet implemented.
+func DBClearStarAndFocus(db *sql.DB, id string) error {
+	// Stub
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Write methods -- Bookings
+// ---------------------------------------------------------------------------
+
+// DBInsertBooking inserts a new booking record for a todo.
+// Stub: not yet implemented.
+func DBInsertBooking(db *sql.DB, b TodoBooking) error {
+	// Stub
+	return nil
+}
+
+// DBDeleteFutureBookings deletes all future booking records for a todo.
+// Stub: not yet implemented.
+func DBDeleteFutureBookings(db *sql.DB, todoID string) error {
+	// Stub
+	return nil
+}
+
+// ---------------------------------------------------------------------------
 // Write methods -- Calendar & Suggestions
 // ---------------------------------------------------------------------------
 

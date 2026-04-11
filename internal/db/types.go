@@ -198,9 +198,21 @@ type Todo struct {
 	SessionLogPath string     `json:"session_log_path,omitempty"`
 	SourceContext    string     `json:"source_context,omitempty"`
 	SourceContextAt  string     `json:"source_context_at,omitempty"`
+	Focus          bool       `json:"focus"`
+	Starred        bool       `json:"starred"`
 	CreatedAt      time.Time  `json:"created_at"`
 	CompletedAt    *time.Time `json:"completed_at"`
 	MergeInto      string     `json:"-"` // transient — not persisted to DB
+}
+
+// TodoBooking represents a Google Calendar event booked for a todo.
+type TodoBooking struct {
+	ID              int64     `json:"id"`
+	TodoID          string    `json:"todo_id"`
+	CalendarEventID string    `json:"calendar_event_id"`
+	StartTime       time.Time `json:"start_time"`
+	DurationMinutes int       `json:"duration_minutes"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // TodoMerge tracks which original todos have been merged into a synthesis todo.

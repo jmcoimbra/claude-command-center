@@ -2400,3 +2400,100 @@ func TestHandleClaudeCommandFinished_EmptyDelegate(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Focus & Star Key Handler Tests
+// ---------------------------------------------------------------------------
+
+// TestStarKey: pressing 's' on an unstarred item should set starred=true and focus=true.
+func TestStarKey(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Unstarred item mu", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+	})
+
+	action := p.HandleKey(keyMsg("s"))
+
+	// The todo should now be starred and focused in memory
+	todos := p.cc.Todos
+	if len(todos) == 0 {
+		t.Fatal("expected at least one todo")
+	}
+	if !todos[0].Starred {
+		t.Error("expected Starred=true after pressing 's' on unstarred todo")
+	}
+	if !todos[0].Focus {
+		t.Error("expected Focus=true after pressing 's' (starring implies focus)")
+	}
+	// A DB write should be triggered
+	if action.TeaCmd == nil {
+		t.Error("'s' key should return a TeaCmd for DB write")
+	}
+	// Schedule offer mode should be active
+	if !p.scheduleOfferMode {
+		t.Error("expected scheduleOfferMode=true after starring (for scheduling offer flash)")
+	}
+}
+
+// TestUnstarKey: pressing 's' on an already-starred item should enter the unstar flow.
+func TestUnstarKey(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred item nu", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+	})
+
+	p.HandleKey(keyMsg("s"))
+
+	// The todo should now be unstarred in memory
+	todos := p.cc.Todos
+	if len(todos) == 0 {
+		t.Fatal("expected at least one todo")
+	}
+	if todos[0].Starred {
+		t.Error("expected Starred=false after pressing 's' on starred todo (unstar flow)")
+	}
+	// Focus should remain after unstarring (unstar does not remove focus)
+	if !todos[0].Focus {
+		t.Error("expected Focus=true to remain after unstarring (unstar does not remove focus)")
+	}
+}
+
+// TestFocusKey: pressing 'f' should toggle focus on the selected todo.
+func TestFocusKey(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Toggle focus xi", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: false, Starred: false},
+	})
+
+	// Press 'f' to enable focus
+	action := p.HandleKey(keyMsg("f"))
+	if len(p.cc.Todos) == 0 {
+		t.Fatal("expected at least one todo")
+	}
+	if !p.cc.Todos[0].Focus {
+		t.Error("expected Focus=true after pressing 'f' on unfocused todo")
+	}
+	if action.TeaCmd == nil {
+		t.Error("'f' key should return a TeaCmd for DB write")
+	}
+
+	// Press 'f' again to disable focus (todo is not starred, so no unstar flow)
+	action2 := p.HandleKey(keyMsg("f"))
+	if p.cc.Todos[0].Focus {
+		t.Error("expected Focus=false after pressing 'f' again (toggle off)")
+	}
+	if action2.TeaCmd == nil {
+		t.Error("second 'f' key should return a TeaCmd for DB write")
+	}
+}
+
+// TestScheduleKey: pressing 'S' (capital) should enter the booking/duration picker mode.
+func TestScheduleKey(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Schedule task omicron", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now()},
+	})
+
+	p.HandleKey(keyMsg("S"))
+
+	// Pressing 'S' should enter booking mode (duration picker)
+	if !p.bookingMode {
+		t.Error("expected bookingMode=true after pressing 'S' (schedule key)")
+	}
+}
+
