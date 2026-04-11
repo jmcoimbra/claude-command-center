@@ -61,14 +61,9 @@ func (s *CalendarSource) Fetch(ctx context.Context) (*refresh.SourceResult, erro
 	return &refresh.SourceResult{Calendar: data}, nil
 }
 
-// PostMerge implements refresh.PostMerger. It executes pending calendar actions
-// (e.g., booking time blocks) after the merge step.
+// PostMerge implements refresh.PostMerger. Previously executed pending calendar
+// booking actions; bookings now happen directly from the TUI via scheduleBlockCmd.
 func (s *CalendarSource) PostMerge(ctx context.Context, database *sql.DB, cc *db.CommandCenter, verbose bool) error {
-	ts, err := loadCalendarAuth()
-	if err != nil {
-		return fmt.Errorf("calendar auth: %w", err)
-	}
-	executePendingActions(ctx, ts, cc)
 	return nil
 }
 
