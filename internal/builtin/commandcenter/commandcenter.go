@@ -874,7 +874,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		if p.scheduleModalActive {
 			view = p.renderScheduleModal(view, viewWidth, viewHeight)
 		}
-		return view
+		return lipgloss.Place(viewWidth, viewHeight, lipgloss.Left, lipgloss.Top, view)
 	}
 
 	view := renderCommandCenterView(&p.styles, &p.grad, p.cc, p.cfg.Calendar.Calendars, p.cfg.Calendar.Enabled, viewWidth, viewHeight, p.ccCursor, p.ccScrollOffset, p.frame, p.claudeLoadingTodo, p.showBacklog, p.ccRefreshing, p.lastRefreshError, p.filteredTodos(), p.triageCounts(), p.cfg.Agent.MaxConcurrent)
@@ -908,7 +908,7 @@ func (p *Plugin) viewCommandTab(width, height int) string {
 		view = lipgloss.JoinVertical(lipgloss.Left, view, "", "  "+filterLabel+filterHint)
 	}
 
-	return view
+	return lipgloss.Place(viewWidth, viewHeight, lipgloss.Left, lipgloss.Top, view)
 }
 
 func (p *Plugin) renderScheduleModal(baseView string, viewWidth, viewHeight int) string {
@@ -948,8 +948,9 @@ func (p *Plugin) renderScheduleModal(baseView string, viewWidth, viewHeight int)
 		Padding(0, 1).
 		Render(body)
 
-	// Center the modal over the base view
-	return lipgloss.Place(viewWidth, viewHeight+14, lipgloss.Center, lipgloss.Center, modal,
+	// Center the modal within the viewHeight budget to prevent bubbletea
+	// diff-renderer artifacts from line count changes (BUG-148).
+	return lipgloss.Place(viewWidth, viewHeight, lipgloss.Center, lipgloss.Center, modal,
 		lipgloss.WithWhitespaceChars(" "),
 		lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
 }

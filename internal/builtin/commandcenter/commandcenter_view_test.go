@@ -2441,3 +2441,79 @@ func TestView_ScheduleModalCollapsedView(t *testing.T) {
 	viewContains(t, view, "Schedule time block")
 	viewContains(t, view, "1h")
 }
+
+// ---------------------------------------------------------------------------
+// BUG-148: Schedule modal must not change line count
+// ---------------------------------------------------------------------------
+
+// TestView_BUG148_ScheduleModalLineCount verifies that opening the schedule
+// modal (via starring) does not change the total line count of the rendered
+// view. A line count increase would cause bubbletea's differential renderer
+// to produce ghost artifacts (duplicated TODOS header, shifted masthead).
+func TestView_BUG148_ScheduleModalLineCount(t *testing.T) {
+	todos := make([]db.Todo, 30)
+	for i := range todos {
+		todos[i] = db.Todo{
+			ID:        fmt.Sprintf("t%d", i+1),
+			Title:     fmt.Sprintf("Todo %d", i+1),
+			Status:    db.StatusBacklog,
+			Source:    "manual",
+			CreatedAt: time.Now(),
+		}
+	}
+	p := testPluginWithTodos(t, todos)
+	p.ccExpanded = true
+	p.triageFilter = "all"
+	p.ccCursor = 0
+
+	// Render without modal — capture line count
+	viewBefore := renderView(p)
+	linesBefore := strings.Count(viewBefore, "\n")
+
+	// Star to open schedule modal
+	p.HandleKey(keyMsg("s"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal to be active after starring")
+	}
+
+	// Render with modal — line count must be identical
+	viewAfter := renderView(p)
+	linesAfter := strings.Count(viewAfter, "\n")
+
+	if linesBefore != linesAfter {
+		t.Errorf("schedule modal changed line count: before=%d, after=%d (diff=%+d); "+
+			"this causes ghost artifacts in bubbletea's diff renderer",
+			linesBefore, linesAfter, linesAfter-linesBefore)
+	}
+
+	// The modal content should be present
+	viewContains(t, viewAfter, "Schedule time block")
+}
+
+// TestView_BUG148_ScheduleModalCollapsedLineCount tests the same invariant
+// in the collapsed (non-expanded) command center view. The collapsed view only
+// shows starred items, so we use S (capital) to directly open the modal.
+func TestView_BUG148_ScheduleModalCollapsedLineCount(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred item", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+
+	// Render without modal
+	viewBefore := renderView(p)
+	linesBefore := strings.Count(viewBefore, "\n")
+
+	// Open schedule modal directly with S
+	p.HandleKey(keyMsg("S"))
+	if !p.scheduleModalActive {
+		t.Fatal("expected schedule modal to be active after S key")
+	}
+
+	// Render with modal
+	viewAfter := renderView(p)
+	linesAfter := strings.Count(viewAfter, "\n")
+
+	if linesBefore != linesAfter {
+		t.Errorf("collapsed view: schedule modal changed line count: before=%d, after=%d (diff=%+d)",
+			linesBefore, linesAfter, linesAfter-linesBefore)
+	}
+}
