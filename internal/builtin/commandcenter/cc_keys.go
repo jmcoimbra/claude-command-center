@@ -730,7 +730,13 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 		if !p.ccRefreshing && p.cfg.RefreshEnabled() {
 			p.ccRefreshing = true
 			p.ccLastRefreshTriggered = time.Now()
+			p.flashMessage = "Refreshing..."
+			p.flashMessageAt = time.Now()
 			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: refreshCCCmd()}
+		}
+		if p.ccRefreshing {
+			p.flashMessage = "Already refreshing..."
+			p.flashMessageAt = time.Now()
 		}
 		return plugin.NoopAction()
 

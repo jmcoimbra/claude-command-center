@@ -330,6 +330,8 @@ func (p *Plugin) handleRefreshFinished(msg ccRefreshFinishedMsg) (bool, plugin.A
 		p.flashMessageAt = time.Now()
 	} else {
 		p.lastRefreshError = ""
+		p.flashMessage = "Refreshed"
+		p.flashMessageAt = time.Now()
 		p.publishEvent("data.refreshed", map[string]interface{}{"source": "ai-cron"})
 	}
 	// Respect write cooldown: skip reload if a DB write happened within the

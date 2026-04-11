@@ -1900,3 +1900,59 @@ func TestView_CollapsedStarPrefixWidthOverflow(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Manual Refresh (r key) — BUG-141
+// ---------------------------------------------------------------------------
+
+func TestView_ManualRefreshShowsFlashMessage(t *testing.T) {
+	p := testPluginWithCC(t)
+	// Reset ccRefreshing (Init sets it true because empty DB has zero GeneratedAt)
+	p.ccRefreshing = false
+	action := p.HandleKey(keyMsg("r"))
+	if action.TeaCmd == nil {
+		t.Fatal("r key should return a TeaCmd for refresh")
+	}
+	if !p.ccRefreshing {
+		t.Error("ccRefreshing should be true after pressing r")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message after pressing r")
+	}
+	if !strings.Contains(p.flashMessage, "Refreshing") {
+		t.Errorf("flash message = %q, want something containing 'Refreshing'", p.flashMessage)
+	}
+	view := renderView(p)
+	viewContains(t, view, "Refreshing")
+}
+
+func TestView_ManualRefreshCompletionShowsFlashMessage(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.ccRefreshing = true
+	handled, _ := p.HandleMessage(ccRefreshFinishedMsg{err: nil})
+	if !handled {
+		t.Fatal("ccRefreshFinishedMsg should be handled")
+	}
+	if p.ccRefreshing {
+		t.Error("ccRefreshing should be false after refresh finished")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message after refresh completes")
+	}
+	if !strings.Contains(p.flashMessage, "Refresh") {
+		t.Errorf("flash message = %q, want something containing 'Refresh'", p.flashMessage)
+	}
+}
+
+func TestView_ManualRefreshNoOpWhenAlreadyRefreshing(t *testing.T) {
+	p := testPluginWithCC(t)
+	p.ccRefreshing = true
+	p.flashMessage = ""
+	action := p.HandleKey(keyMsg("r"))
+	if action.TeaCmd != nil {
+		t.Error("r key should not dispatch another refresh when already refreshing")
+	}
+	if p.flashMessage == "" {
+		t.Error("expected flash message even when already refreshing")
+	}
+}
