@@ -1360,3 +1360,105 @@ func TestView_SchedulingOffer(t *testing.T) {
 	// After starring, the flash should mention scheduling
 	viewContains(t, view, "Schedule time")
 }
+
+// TestView_HelpOverlayShowsFSKeys verifies that the help overlay shows f, s, S bindings.
+func TestView_HelpOverlayShowsFSKeys(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Focusable todo", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true},
+	})
+
+	// Open help overlay.
+	p.HandleKey(keyMsg("?"))
+	if !p.showHelp {
+		t.Fatal("? should toggle showHelp on")
+	}
+
+	view := renderView(p)
+	viewContains(t, view, "KEYBOARD SHORTCUTS")
+	// f key entry
+	viewContains(t, view, "Toggle focus")
+	// s key entry
+	viewContains(t, view, "Toggle star")
+	// S key entry
+	viewContains(t, view, "Schedule calendar block")
+	// Old "Schedule time block" entry should be gone
+	viewNotContains(t, view, "Schedule time block for todo")
+}
+
+// TestView_CompleteClears StarFocus verifies that completing a todo clears its star and focus
+// in memory so the collapsed view immediately removes it.
+func TestView_CompleteClears_StarFocus(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred focused task", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+	})
+
+	// Complete the todo (x key).
+	p.HandleKey(keyMsg("x"))
+
+	// The in-memory todo should have Starred and Focus cleared.
+	found := false
+	for _, t2 := range p.cc.Todos {
+		if t2.ID == "t1" {
+			found = true
+			if t2.Starred {
+				t.Error("Starred should be false after completing todo")
+			}
+			if t2.Focus {
+				t.Error("Focus should be false after completing todo")
+			}
+		}
+	}
+	if !found {
+		t.Error("todo t1 not found in cc.Todos")
+	}
+}
+
+// TestView_DismissClearsStarFocus verifies that dismissing a todo clears its star and focus
+// in memory.
+func TestView_DismissClearsStarFocus(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Starred task to dismiss", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+	})
+
+	// Dismiss the todo (X key).
+	p.HandleKey(keyMsg("X"))
+
+	// The in-memory todo should have Starred and Focus cleared.
+	found := false
+	for _, t2 := range p.cc.Todos {
+		if t2.ID == "t1" {
+			found = true
+			if t2.Starred {
+				t.Error("Starred should be false after dismissing todo")
+			}
+			if t2.Focus {
+				t.Error("Focus should be false after dismissing todo")
+			}
+		}
+	}
+	if !found {
+		t.Error("todo t1 not found in cc.Todos")
+	}
+}
+
+// TestView_SortStarredFirst verifies that starred todos appear before non-starred
+// todos in the filtered list (both collapsed and expanded views).
+func TestView_SortStarredFirst(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{ID: "t1", Title: "Unstarred alpha", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+		{ID: "t2", Title: "Starred beta", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: true, Focus: true},
+		{ID: "t3", Title: "Unstarred gamma", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Starred: false, Focus: false},
+	})
+
+	// Expand to see all todos.
+	p.HandleKey(keyMsg(" "))
+
+	filtered := p.filteredTodos()
+	if len(filtered) < 2 {
+		t.Fatalf("expected at least 2 filtered todos, got %d", len(filtered))
+	}
+	// First item must be the starred one.
+	if !filtered[0].Starred {
+		t.Errorf("expected first item to be starred, got %q (starred=%v)", filtered[0].Title, filtered[0].Starred)
+	}
+}

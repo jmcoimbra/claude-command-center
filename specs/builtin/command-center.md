@@ -75,7 +75,9 @@ The main productivity hub plugin. Manages todos, calendar events, AI-powered sug
 | `enter` | search | Open the selected item from the filtered list directly (no intermediate freeze state) |
 | `esc` | search | Clear search query and exit search mode |
 | `b` | normal | Toggle backlog (completed items) |
-| `s` | normal | Enter booking mode for selected todo |
+| `f` | normal | Toggle focus on selected todo (focus = move to top; unfocus clears star+focus) |
+| `s` | normal | Toggle star on selected todo (star = starred+focused; unstar checks for calendar bookings) |
+| `S` | normal | Schedule calendar block for selected todo (enters booking mode; auto-stars if not already starred) |
 | `r` | normal | Manual refresh (spawns ai-cron) |
 | `enter` | normal | Open detail view for selected todo |
 | `o` | normal | Launch session for todo (by session_id, project_dir, or navigate to sessions) |
@@ -703,6 +705,13 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - View renders without panic (with and without data)
 - Help overlay toggles on `?` and renders KEYBOARD SHORTCUTS content; returns ConsumedAction so the host does not apply fallback key handling
 - Help overlay dismisses on any subsequent key press and restores the previous view
+- Help overlay lists `f` (Toggle focus), `s` (Toggle star), and `S` (Schedule calendar block) key bindings
+- Completing a todo (`x` or detail `x`) clears `Starred` and `Focus` fields in memory immediately (in addition to DB)
+- Dismissing a todo (`X` or detail `X`) clears `Starred` and `Focus` fields in memory immediately (in addition to DB)
+- Unstar confirm `y` dispatches `releaseBookingsCmd` to delete Google Calendar events for the todo, then unsets `starred` in DB
+- Unstar confirm `n` unstars the todo in DB without touching calendar events
+- `f`, `s` operations call `notifyPeersCmd("data.refreshed")` for cross-instance sync
+- Starred todos sort before non-starred todos within any filtered view
 - HandleMessage processes async results
 - Expanded view navigation (left/right columns)
 - Expanded view left/right paginates at column edges

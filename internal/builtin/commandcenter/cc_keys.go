@@ -595,7 +595,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 					}
 					return db.DBSetTodoFocus(database, todoID, true)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				cmds := []tea.Cmd{dbCmd}
+				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+					cmds = append(cmds, notifyCmd)
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 			}
 			// Unstar it: check for future bookings
 			futureBookings, err := db.DBGetFutureBookingsForTodo(p.database, todoID)
@@ -613,7 +617,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBSetTodoStar(database, todoID, false)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				cmds := []tea.Cmd{dbCmd}
+				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+					cmds = append(cmds, notifyCmd)
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmds...)}
 			}
 			// Future bookings exist — ask to release them
 			p.unstarConfirmMode = true
@@ -673,7 +681,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 				dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 					return db.DBSetTodoFocus(database, todoID, false)
 				})
-				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+				cmdsUnfocus := []tea.Cmd{dbCmd}
+				if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+					cmdsUnfocus = append(cmdsUnfocus, notifyCmd)
+				}
+				return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmdsUnfocus...)}
 			}
 			// Focus it
 			for i := range p.cc.Todos {
@@ -687,7 +699,11 @@ func (p *Plugin) handleCommandTab(msg tea.KeyMsg) plugin.Action {
 			dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 				return db.DBSetTodoFocus(database, todoID, true)
 			})
-			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+			cmdsFocus := []tea.Cmd{dbCmd}
+			if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+				cmdsFocus = append(cmdsFocus, notifyCmd)
+			}
+			return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmdsFocus...)}
 		}
 		return plugin.NoopAction()
 
@@ -882,7 +898,7 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 
 	switch msg.String() {
 	case "y":
-		// Unstar and release bookings (calendar cleanup is handled by Stage 5b)
+		// Unstar and release bookings: delete calendar events + DB records
 		for i := range p.cc.Todos {
 			if p.cc.Todos[i].ID == todoID {
 				p.cc.Todos[i].Starred = false
@@ -890,14 +906,15 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 			}
 		}
 		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
-			// Delete future bookings records
-			_, err := database.Exec(`DELETE FROM cc_todo_bookings WHERE todo_id = ?`, todoID)
-			if err != nil {
-				return err
-			}
 			return db.DBSetTodoStar(database, todoID, false)
 		})
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+		// Also delete the actual Google Calendar events via releaseBookingsCmd.
+		relCmd := releaseBookingsCmd(p, todoID)
+		cmdsY := []tea.Cmd{dbCmd, relCmd}
+		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+			cmdsY = append(cmdsY, notifyCmd)
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmdsY...)}
 
 	case "n":
 		// Unstar but keep bookings
@@ -910,7 +927,11 @@ func (p *Plugin) handleUnstarConfirm(msg tea.KeyMsg) plugin.Action {
 		dbCmd := p.dbWriteCmd(func(database *sql.DB) error {
 			return db.DBSetTodoStar(database, todoID, false)
 		})
-		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: dbCmd}
+		cmdsN := []tea.Cmd{dbCmd}
+		if notifyCmd := p.notifyPeersCmd("data.refreshed"); notifyCmd != nil {
+			cmdsN = append(cmdsN, notifyCmd)
+		}
+		return plugin.Action{Type: plugin.ActionNoop, TeaCmd: tea.Batch(cmdsN...)}
 
 	default:
 		// Any other key: cancel, stay starred

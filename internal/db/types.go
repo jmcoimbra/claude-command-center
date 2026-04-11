@@ -380,6 +380,8 @@ func (cc *CommandCenter) CompleteTodo(id string) {
 		if cc.Todos[i].ID == id {
 			cc.Todos[i].Status = "completed"
 			cc.Todos[i].CompletedAt = &now
+			cc.Todos[i].Starred = false
+			cc.Todos[i].Focus = false
 			return
 		}
 	}
@@ -429,6 +431,8 @@ func (cc *CommandCenter) RemoveTodo(id string) {
 	for i := range cc.Todos {
 		if cc.Todos[i].ID == id {
 			cc.Todos[i].Status = "dismissed"
+			cc.Todos[i].Starred = false
+			cc.Todos[i].Focus = false
 			return
 		}
 	}
