@@ -125,16 +125,18 @@ func (p *Plugin) buildDetailBody(s *ccStyles, todo db.Todo, innerWidth int, hasA
 		trainingSection = "\n  " + trainingIndicator
 	}
 
-	// Session summary — full, no truncation
+	// Session summary — full, no truncation, with markdown rendering
 	var summarySection string
 	if todo.SessionSummary != "" {
 		summaryHeader := s.SectionHeader.Render("  SESSION SUMMARY")
 		wrapped := wrapText(todo.SessionSummary, innerWidth-6)
+		bodyStyle := lipgloss.NewStyle().Foreground(s.ColorWhite)
+		rendered := renderMarkdown(wrapped, s.SectionHeader, bodyStyle, s.DescMuted)
 		var summaryLines []string
-		for _, line := range strings.Split(wrapped, "\n") {
+		for _, line := range strings.Split(rendered, "\n") {
 			summaryLines = append(summaryLines, "   "+line)
 		}
-		summaryBody := lipgloss.NewStyle().Foreground(s.ColorWhite).Render(strings.Join(summaryLines, "\n"))
+		summaryBody := strings.Join(summaryLines, "\n")
 		summarySection = lipgloss.JoinVertical(lipgloss.Left, "", summaryHeader, "", summaryBody)
 	}
 

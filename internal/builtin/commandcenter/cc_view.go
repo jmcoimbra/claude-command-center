@@ -641,6 +641,9 @@ func renderSuggestionBanner(s *ccStyles, suggestions *db.Suggestions, width int)
 // wrapText delegates to ui.WrapText.
 var wrapText = ui.WrapText
 
+// renderMarkdown delegates to ui.RenderMarkdown.
+var renderMarkdown = ui.RenderMarkdown
+
 
 // refreshSpinner renders a small fixed-width (1 char) braille dot spinner with
 // shifting colors. The dots cycle through braille patterns while the color

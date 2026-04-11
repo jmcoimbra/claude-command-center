@@ -1509,3 +1509,81 @@ func TestView_DetailHintsShowFSKeys(t *testing.T) {
 	viewContains(t, view, "s star")
 	viewContains(t, view, "S schedule")
 }
+
+// ---------------------------------------------------------------------------
+// Session Summary Markdown Rendering (BUG-133)
+// ---------------------------------------------------------------------------
+
+func TestView_DetailSessionSummaryRendersHeadingsWithoutPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Summary test task",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			SessionSummary: "## What was done\n- Searched for user\n- Sent message\n\n## Key decisions\n- Used MCP tools",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	// SESSION SUMMARY header should be present
+	viewContains(t, view, "SESSION SUMMARY")
+	// Heading text should be present
+	viewContains(t, view, "What was done")
+	viewContains(t, view, "Key decisions")
+	// Raw ## prefix should NOT be visible
+	viewNotContains(t, view, "## What was done")
+	viewNotContains(t, view, "## Key decisions")
+}
+
+func TestView_DetailSessionSummaryRendersBulletsWithoutDashPrefix(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Bullet test task",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			SessionSummary: "- First bullet\n- Second bullet",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	// Bullet text should be present
+	viewContains(t, view, "First bullet")
+	viewContains(t, view, "Second bullet")
+	// Bullet character should be present
+	viewContains(t, view, "\u2022")
+}
+
+func TestView_DetailSessionSummaryRendersInlineCodeWithoutBackticks(t *testing.T) {
+	p := testPluginWithTodos(t, []db.Todo{
+		{
+			ID:             "t1",
+			Title:          "Code test task",
+			Status:         db.StatusReview,
+			Source:         "manual",
+			CreatedAt:      time.Now(),
+			Starred:        true,
+			SessionSummary: "- Used `slack_send_message` MCP tool",
+		},
+	})
+	p.detailView = true
+	p.detailTodoID = "t1"
+	p.detailMode = "viewing"
+
+	view := renderView(p)
+	// Code text should be present
+	viewContains(t, view, "slack_send_message")
+	// Backticks should NOT be visible in the rendered output
+	viewNotContains(t, view, "`slack_send_message`")
+}

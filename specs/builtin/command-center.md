@@ -571,8 +571,21 @@ From the detail view, pressing `o` on a todo with a `session_id` launches an int
 Completed sessions (`session_status == "review"` or `"failed"`) show:
 
 - **In the todo list**: styled status indicator (`● ready for review` in green, or `⏳ queued` in muted)
-- **In the detail view**: a session status indicator (`● Session: running`, `● Session: completed`, `● Session: failed`) and a `SESSION SUMMARY` section with wrapped output text
+- **In the detail view**: a session status indicator (`● Session: running`, `● Session: completed`, `● Session: failed`) and a `SESSION SUMMARY` section with markdown rendered as structured content (see Session Summary Markdown Rendering below)
 - **In the expanded view triage tabs**: the "Review" and "Blocked" tabs filter todos by `session_status`
+
+
+#### Session Summary Markdown Rendering
+
+The `SESSION SUMMARY` section renders agent-authored markdown as structured TUI content using a simple line-by-line renderer (`ui.RenderMarkdown`). The renderer handles:
+
+- **`## Heading` lines**: Rendered as bold cyan section headers (using `SectionHeader` style). The `## ` prefix is stripped.
+- **`- bullet` lines**: Rendered with a `  • ` prefix (indented bullet character). The `- ` prefix is replaced.
+- **Inline `` `backtick` `` content**: Rendered with the `DescMuted` style (dimmed). Backtick delimiters are stripped.
+- **Plain text lines**: Rendered as-is with default foreground color.
+- **Empty lines**: Preserved as-is for paragraph spacing.
+
+All lines are word-wrapped to the available width before markdown interpretation. The raw `##`, `-`, and backtick markers are never visible in the rendered output.
 
 #### Status Indicators in Todo List
 
@@ -843,3 +856,7 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unmerge (`U`): adjusts mergeSourceCursor when out of bounds after removal
 - Merge auto-detection: enrichment LLM returns merge_into for duplicate detection
 - Merge auto-detection: refresh dedupTodos groups flagged duplicates and calls Synthesize
+- Session summary: `## ` heading lines render as bold cyan headers without raw `##` prefix
+- Session summary: `- ` bullet lines render with indented bullet character without raw `- ` prefix
+- Session summary: inline backtick content renders with muted style, backtick delimiters stripped
+- Session summary: plain text and empty lines preserved as-is
