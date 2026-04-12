@@ -451,7 +451,7 @@ func (p *Plugin) buildDetailHints(s *ccStyles, todo db.Todo, hasActiveSession bo
 		}
 		if hasActiveSession {
 			baseHints += " \u00b7 w watch"
-		} else if todo.SessionLogPath != "" {
+		} else if todo.SessionLogPath != "" || discoverSessionLog(todo.ID) != "" {
 			baseHints += " \u00b7 w log"
 		}
 		baseHints += " \u00b7 c command \u00b7 T train \u00b7 ? help \u00b7 esc back"

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/anutron/claude-command-center/internal/agent"
 	"time"
 
 	"github.com/anutron/claude-command-center/internal/db"
@@ -176,16 +178,26 @@ func (p *Plugin) handleDetailViewing(msg tea.KeyMsg) plugin.Action {
 			}
 
 			// No active session anywhere — try saved log on disk.
-			if todo.SessionLogPath != "" {
-				if err := p.initSessionViewerFromLog(todo.ID, todo.SessionLogPath); err != nil {
+			logPath := todo.SessionLogPath
+			if logPath == "" {
+				// Fallback: discover log file by searching for *_<todoID>.jsonl
+				logPath = discoverSessionLog(todo.ID)
+			}
+			if logPath != "" {
+				if err := p.initSessionViewerFromLog(todo.ID, logPath); err != nil {
 					p.flashMessage = fmt.Sprintf("Cannot open session log: %v", err)
 					p.flashMessageAt = time.Now()
 					return plugin.ConsumedAction()
 				}
+				// Persist the discovered path so future opens are instant
+				if todo.SessionLogPath == "" {
+					p.setTodoSessionLogPath(todo.ID, logPath)
+					return plugin.Action{Type: plugin.ActionNoop, TeaCmd: p.persistSessionLogPath(todo.ID, logPath)}
+				}
 				return plugin.ConsumedAction()
 			}
 			// No active session and no log
-			p.flashMessage = "No active session for this todo"
+			p.flashMessage = "No session log found for this todo"
 			p.flashMessageAt = time.Now()
 		}
 		return plugin.ConsumedAction()
@@ -777,6 +789,20 @@ func sessionFileExists(sessionID string) bool {
 		}
 	}
 	return false
+}
+
+// discoverSessionLog searches the session log directory for a log file matching
+// the given todo ID. Log files are named <timestamp>_<todoID>.jsonl. Returns
+// the most recent matching path, or empty string if none found.
+func discoverSessionLog(todoID string) string {
+	logDir := agent.SessionLogDir()
+	pattern := filepath.Join(logDir, "*_"+todoID+".jsonl")
+	matches, err := filepath.Glob(pattern)
+	if err != nil || len(matches) == 0 {
+		return ""
+	}
+	// Return the last match (most recent by filename, since names are timestamp-prefixed)
+	return matches[len(matches)-1]
 }
 
 // extractSessionIDFromLog reads the first few lines of a todo's session log
