@@ -210,6 +210,15 @@ The `S` key from the command tab or detail view also opens the schedule modal (a
 - `S` returns to picker state for scheduling another block
 - `esc` dismisses the modal
 
+**Working hours:**
+
+Bookings land inside working hours: Monday through Friday, 9:00am to 6:00pm, in the user's local timezone. `FindFreeSlot` selects the next working-hours window that can fit the requested duration before scanning for free time.
+
+- The candidate start is the current time rounded up to the next 15-minute boundary
+- If that falls on a weekend, before 9am, or after 6pm on a weekday, it rolls forward to the next weekday's 9:00am
+- If the remaining time before 6pm cannot fit the requested duration, it rolls forward to the next weekday's 9:00am
+- Weekends (Saturday, Sunday) are always skipped — Friday after-hours bookings land on Monday
+
 **Rendering:**
 
 The modal is a centered lipgloss box with a border, rendered via `lipgloss.Place` within the `viewHeight` budget (the same vertical space used by the todo list). The modal must NOT add lines beyond `viewHeight` — using the full `height` (which includes the plugin's internal overhead of 14 lines) would cause the total rendered output to exceed the TUI host's content allocation, producing ghost artifacts (duplicated headers, shifted masthead) in bubbletea's differential renderer. The modal intercepts all key input when active (checked early in `HandleKey`). Unhandled keys return `ConsumedAction()` (not `NoopAction()`) to prevent the host from processing them (e.g., Tab switching host-level tabs while the modal is showing).
