@@ -152,7 +152,7 @@ Quick todo entry (`t`) opens a lightweight textarea. On submit, the text is sent
 ## Event Bus
 
 - Publishes: `todo.completed`, `todo.dismissed`, `todo.deferred`, `todo.promoted`, `pending.todo`
-- Subscribes to lifecycle messages: `TabViewMsg`, `ReturnMsg`, `NotifyMsg`, `LaunchMsg`
+- Subscribes to: lifecycle messages (`TabViewMsg`, `ReturnMsg`, `NotifyMsg`, `LaunchMsg`), `knowledge.insights.updated`
 
 ## Migrations
 
@@ -177,6 +177,29 @@ Todos have a `display_id` column (auto-incrementing integer) for stable, human-r
 4. Warning bar when data is stale or services are unreachable
 5. Help overlay toggled with `?`
 6. Expanded multi-column view when scrolling past visible todos. Rows per column use `(height - 8) / 2` to maximize vertical space (the extra line accounts for the triage tab bar). Left/right arrows paginate when at column edges. A triage filter tab bar appears below the header.
+
+### Knowledge insights section
+
+When the knowledge plugin is enabled, the Command Center renders an "Insights" section in the morning view displaying active (non-dismissed) insights from `knowledge_surfaced_insights`.
+
+#### Data loading
+
+- Subscribes to `knowledge.insights.updated` events in `Init`
+- On event, triggers a re-query of `knowledge_surfaced_insights` and re-renders
+- Query: select rows where `dismissed_at IS NULL`, ordered by `priority ASC` (lower number = higher priority)
+
+#### Rendering
+
+- The insights section appears below the focus suggestion and above the todo list
+- Each insight shows its title and body text
+- Silence alerts and drift detection insights are visually distinguishable (e.g., different icons or labels)
+- When no active insights exist, the section is hidden (not rendered as an empty section)
+
+#### Dismiss key
+
+- `x` while an insight is selected updates `dismissed_at` to now on that row
+- The dismissed insight is removed from the rendered list immediately
+- The dismiss write notifies peer instances via `NotifyPeers` (same pattern as todo mutations)
 
 ### Todo Lifecycle
 
@@ -791,3 +814,11 @@ Reused from previous implementation. `/` opens picker, type to filter, `j/k` or 
 - Unmerge (`U`): adjusts mergeSourceCursor when out of bounds after removal
 - Merge auto-detection: enrichment LLM returns merge_into for duplicate detection
 - Merge auto-detection: refresh dedupTodos groups flagged duplicates and calls Synthesize
+- Knowledge insights: active insights appear in the morning view when `knowledge_surfaced_insights` has non-dismissed rows
+- Knowledge insights: insights section is hidden when no active insights exist
+- Knowledge insights: `knowledge.insights.updated` event triggers re-query and re-render
+- Knowledge insights: dismiss key (`x`) on a selected insight sets `dismissed_at` and removes it from the view
+- Knowledge insights: dismissed insight does not reappear after re-query
+- Knowledge insights: silence alerts and drift detection insights render with distinguishable labels
+- Knowledge insights: insights are ordered by priority (lower number first)
+- Knowledge insights: dismiss notifies peer instances via `NotifyPeers`

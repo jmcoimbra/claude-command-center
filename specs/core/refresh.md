@@ -34,7 +34,9 @@ See `specs/core/datasource.md` for full details. Each source implements `Name()`
 9. **Generate proposed prompts**: Route eligible todos (active, has source, no prompt yet) using `RoutingLLM` (sonnet). The routing step validates ownership — a task is Aaron's if he committed to it OR if someone else assigned it to him by name (see `specs/core/todo-extraction.md`). If the LLM returns `project_dir: "REJECT"`, the todo is auto-dismissed. Otherwise, it assigns a project directory and generates an actionable prompt.
 10. **Dedup pass**: After routing, `dedupTodos` processes merge suggestions. For each todo where routing set `merge_into`, the system checks veto history via `WerePreviouslyMergedAndVetoed`, then synthesizes combined todos via LLM (see Todo Synthesis below).
 11. **Fetch source context**: For todos with a `source_ref`, fetch raw source content (transcripts, threads, PR comments) via `ContextRegistry` and cache in `source_context`/`source_context_at` columns.
-12. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
+12. **Knowledge extraction** (when knowledge plugin is enabled): For each todo with a populated `source_context` (Granola, Slack, Gmail), call the knowledge extraction function to identify topics, decisions, positions, and open threads. Write artifacts to the knowledge tables. See `specs/core/knowledge-extraction.md`.
+13. **Insight analysis** (when knowledge plugin is enabled): Run silence detection and drift detection over the knowledge tables. Write results to `knowledge_surfaced_insights`. Publish `knowledge.insights.updated` event if insights changed. See `specs/core/knowledge-analysis.md`.
+14. Save merged state to SQLite via `db.DBSaveRefreshResult(opts.DB, merged)` (or print to stdout if DryRun)
 
 ## Types
 
@@ -164,6 +166,17 @@ Refresh locking uses `syscall.Flock()` for atomic advisory file locking (`intern
 - `shouldRefresh` returns true when `source_context_at` is older than TTL
 - `FetchContextBestEffort` logs errors without propagating them
 - `FetchAndSave` persists context to DB and updates in-memory todo
+
+### Knowledge pipeline
+
+- Knowledge extraction runs after source-context fetch when the knowledge plugin is enabled
+- Knowledge extraction is skipped when the knowledge plugin is disabled
+- Knowledge extraction iterates only todos with populated `source_context` (Granola, Slack, Gmail)
+- Knowledge extraction errors for one todo do not block extraction for others
+- Insight analysis runs after knowledge extraction when the knowledge plugin is enabled
+- Insight analysis is skipped when the knowledge plugin is disabled
+- Insight analysis publishes `knowledge.insights.updated` when insights change
+- Extraction and analysis run sequentially (analysis depends on extraction output)
 
 ### Routing
 

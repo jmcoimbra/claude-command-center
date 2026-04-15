@@ -53,6 +53,12 @@ type EventBus interface {
 | `session.bookmark.created` | `{session_id, project}` | — | Session bookmarked |
 | `session.bookmark.deleted` | `{session_id}` | — | Session bookmark removed |
 
+### Knowledge Events
+
+| Topic | Payload | Subscribers | Description |
+|-------|---------|-------------|-------------|
+| `knowledge.insights.updated` | none | commandcenter | Knowledge plugin wrote or removed insights in `knowledge_surfaced_insights`; consumers re-query the table |
+
 ### Settings Events
 
 | Topic | Payload | Subscribers | Description |
