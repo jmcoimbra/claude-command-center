@@ -161,6 +161,9 @@ id              TEXT PRIMARY KEY
 description     TEXT NOT NULL
 blocking_on     TEXT             -- what's needed to resolve (free text)
 topic_id        TEXT             -- FK to knowledge_topics, nullable
+first_raised_by TEXT             -- who first raised this thread (e.g. "Aaron")
+source          TEXT NOT NULL    -- granola | slack | gmail
+source_ref      TEXT NOT NULL    -- meeting id, message permalink, etc.
 first_raised_at TEXT NOT NULL
 last_activity_at TEXT NOT NULL
 status          TEXT NOT NULL    -- open | resolved | abandoned

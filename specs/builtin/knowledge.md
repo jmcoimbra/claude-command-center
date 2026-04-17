@@ -72,6 +72,9 @@ Something raised but not resolved. Mutable – status can change from open to re
 | `description` | TEXT NOT NULL | What the open thread is about |
 | `blocking_on` | TEXT | What's needed to resolve (free text) |
 | `topic_id` | TEXT | FK to `knowledge_topics` (nullable) |
+| `first_raised_by` | TEXT | Who first raised this thread (e.g. "Aaron") |
+| `source` | TEXT NOT NULL | granola, slack, or gmail |
+| `source_ref` | TEXT NOT NULL | Meeting ID, message permalink, etc. |
 | `first_raised_at` | TEXT NOT NULL | When it was first mentioned |
 | `last_activity_at` | TEXT NOT NULL | When it was last mentioned |
 | `status` | TEXT NOT NULL | open, resolved, or abandoned |
@@ -191,7 +194,7 @@ On first run after the knowledge plugin is enabled (detected by checking a `know
 ### Migration
 
 - All six tables are created with correct columns, indexes, and constraints
-- Indexes exist on `knowledge_topics.name`, `knowledge_positions(holder, topic_id)`, `knowledge_open_threads.last_activity_at`, `knowledge_surfaced_insights.dismissed_at`
+- Indexes exist on `knowledge_topics.name`, `knowledge_positions(holder, topic_id)`, `knowledge_open_threads.last_activity_at`, `knowledge_open_threads(first_raised_by, last_activity_at)`, `knowledge_surfaced_insights.dismissed_at`
 - `knowledge_backfill_state` row is created during migration
 
 ### Extraction
