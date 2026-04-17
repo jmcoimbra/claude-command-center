@@ -175,13 +175,16 @@ If the knowledge plugin is disabled, the table is empty and the Command Center's
 
 ### 1-month backfill
 
-On first run after the knowledge plugin is enabled (detected by checking a `knowledge_backfill_state` row in the migration), the plugin fetches the last 30 days of source content and runs extraction on all of it. This seeds the corpus so silence alerts and drift detection have history to work with on day one.
+On first run after the knowledge plugin is enabled (detected by checking `knowledge_backfill_state` rows created by the migration), the backfill queries `cc_todos` for items from the last 30 days that have `source_context` populated and belong to a narrative source (granola, slack, gmail). For each matching item, it calls `Extract` with the cached source content.
 
+- **Entry point**: `RunBackfill(ctx, db, llm)` in `internal/builtin/knowledge/backfill.go`
 - **Window**: 30 days (longer than the default 14-day refresh window because Aaron was on vacation during part of the recent past)
-- **Resumability**: Per-source progress is tracked in `knowledge_backfill_state` so a partial failure can resume from the last successful source/timestamp
-- **One-shot**: Once `knowledge_backfill_state` shows completion, subsequent refreshes operate on go-forward data only
-- **Cost guard**: Logs estimated API call count before starting so the user can see the expected magnitude
-- **CLI trigger**: `ccc --backfill-knowledge` manually re-triggers backfill if needed
+- **Resumability**: Per-source progress is tracked in `knowledge_backfill_state` (`last_offset` stores the last processed `source_ref`; items are processed in `source_ref ASC` order). A partial failure resumes from the last successful item on the next run.
+- **One-shot**: Once all sources in `knowledge_backfill_state` have `completed = 1`, `RunBackfill` returns immediately with no LLM calls.
+- **Cost guard**: Logs the item count per source before processing: "Knowledge backfill: processing N items from {source}"
+- **Error handling**: Individual extraction failures are logged but do not stop the backfill. A source whose `cc_todos` table is missing (e.g. in test databases) is marked complete and skipped.
+- **Helper functions**: `IsBackfillComplete(db)` returns true when all sources are done; `ResetBackfill(db)` clears completion markers for CLI re-trigger
+- **CLI trigger**: `ccc --backfill-knowledge` manually re-triggers backfill via `ResetBackfill` followed by `RunBackfill`
 
 ### Configuration
 
