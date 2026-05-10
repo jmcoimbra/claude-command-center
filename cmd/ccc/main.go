@@ -155,6 +155,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "orchestrator":
+			if err := runOrchestrator(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		case "-h", "--help", "help":
 			printUsage()
 			return
@@ -365,6 +371,7 @@ func printUsage() {
 	fmt.Fprintln(os.Stderr, "  refresh              Trigger a data refresh via daemon")
 	fmt.Fprintln(os.Stderr, "  stop-all             Emergency stop: kill all running agents")
 	fmt.Fprintln(os.Stderr, "  console              Live agent streaming dashboard")
+	fmt.Fprintln(os.Stderr, "  orchestrator <verb>  Manage orchestrators (run `ccc orchestrator help` for details)")
 	fmt.Fprintln(os.Stderr, "  sessions             Same as default")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Options:")

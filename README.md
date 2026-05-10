@@ -64,6 +64,12 @@ Real-time agent and LLM activity observability. Toggle with `~` to see active ag
 
 Session registry, agent lifecycle management, budget enforcement, event distribution, and refresh scheduling — all managed by a background daemon that auto-starts with the TUI.
 
+### Orchestrators
+
+A coordination layer for working on multiple things in parallel. An **orchestrator** is a Claude session whose only job is to keep things straight across multiple working sessions — track threads, log decisions, hold open questions, help decide what to focus on next. State lives at `~/.claude/orchestrators/<name>/` with `state.md` as the source of truth. Identity is by session topic (`ORCHESTRATE: <name>`).
+
+Start one with the `/orchestrator` skill in a fresh terminal. From any working session, use `/ask-orchestrator` to copy a structured handoff to the clipboard and paste it into your orchestrator. CLI surface lives under `ccc orchestrator` (init, status, thread CRUD, decision/question logging, overlap-check, paste-header, complete, list). See [`specs/core/orchestrator.md`](specs/core/orchestrator.md) for the full data model.
+
 ## Architecture
 
 CCC is two binaries, a daemon, and a plugin system:

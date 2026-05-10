@@ -210,6 +210,108 @@ Removes CCC-managed worktrees with interactive confirmation.
 - Lists targets and prompts for `y/N` confirmation before removing
 - Prints each removed worktree branch on success
 
+### `ccc orchestrator <verb>`
+
+Manages orchestrators — named contexts that coordinate multiple working sessions. The orchestrator subsystem is documented in detail in `specs/core/orchestrator.md`. The CLI verbs below are the surface that the `/orchestrator` skill drives.
+
+All state is file-based under `~/.claude/orchestrators/<name>/`. There is no database or daemon involvement.
+
+The orchestrator name is resolved from the current session topic, which must have the form `ORCHESTRATE: <name>`. Verbs that need an active orchestrator fail with a clear error if the topic is missing or malformed; `list` and `overlap-check` do not require an active orchestrator.
+
+#### `ccc orchestrator init`
+
+Creates or no-ops the orchestrator named by the current session topic.
+
+- Flags: `--project <path>` (optional)
+- Idempotent: if `~/.claude/orchestrators/<name>/state.md` already exists with `status: active`, nothing changes
+- Otherwise, creates the directory with `log.sh`, empty `transcript.md`, empty `state.log`, and a fresh `state.md` (frontmatter `status: active`, `started_at: <now>`)
+
+#### `ccc orchestrator status`
+
+Prints current state by reading `state.md`.
+
+- Flags: `--json` (optional). When set, emits a structured JSON object instead of the raw markdown.
+- Output covers orchestrator name, status, project, started_at, every thread, every open question, recent decisions.
+
+#### `ccc orchestrator thread add`
+
+Adds a thread under `# Threads` in `state.md`.
+
+- Flags: `--name` (required), `--project`, `--branch`, `--worktree`, `--session-id`, `--status` (default `planning`)
+- Thread name must be unique within the orchestrator
+
+#### `ccc orchestrator thread set-status`
+
+Updates a thread's `status:` line and appends a `state.log` entry.
+
+- Flags: `--name` (required), `--status` (required), `--reason` (optional)
+- Status is freeform text — typical values are `planning`, `in-flight`, `blocked`, `awaiting-user`, `complete`
+
+#### `ccc orchestrator thread complete`
+
+Shorthand for setting a thread's status to `complete`.
+
+- Flags: `--name` (required)
+
+#### `ccc orchestrator decision add`
+
+Appends a timestamped line under `# Decisions` in `state.md`.
+
+- Flags: `--body` (required, or `--body -` to read from stdin), `--thread` (optional)
+- Appends a `state.log` entry
+
+#### `ccc orchestrator question add`
+
+Appends an open question under `# Questions` with a fresh `Q<n>` ID.
+
+- Flags: `--body` (required, or `--body -` to read from stdin), `--thread` (optional)
+
+#### `ccc orchestrator question resolve`
+
+Flips a question's `(open)` marker to `(resolved)` and records the resolution timestamp.
+
+- Flags: `--id` (required, e.g. `Q1`), `--note` (optional)
+- Fails if no question with that ID exists
+
+#### `ccc orchestrator overlap-check`
+
+Finds non-complete orchestrators whose project or themes overlap with the supplied context. Used by the `/orchestrator` skill on startup before naming a new orchestrator.
+
+- Flags: `--project <path>` (optional), `--themes <comma-separated>` (optional)
+- Reads each `~/.claude/orchestrators/*/state.md` and returns matches as JSON: an array of `{name, project, started_at, match_reason}` objects
+- Returns an empty array (exit 0) when there are no matches
+- Excludes orchestrators whose `state.md` frontmatter has `status: complete`
+
+#### `ccc orchestrator paste-header`
+
+Prints a standardized "PASTE INTO" block for the given thread, suitable for the orchestrator session to surface to the user.
+
+- Flags: `--thread <name>` (required)
+- Output format:
+  ```
+  ─── PASTE INTO: <thread name> ───
+    Project:  <project path>
+    Worktree: <worktree path or "(none)">
+    ccc topic: "<expected topic for the worker session>"
+    Verify:   terminal prompt shows that branch before pasting
+  ```
+- Fails with a clear error if the thread does not exist
+
+#### `ccc orchestrator complete`
+
+Marks the current orchestrator as complete by updating the YAML frontmatter in `state.md`.
+
+- No flags
+- Sets `status: complete` and `completed_at: <now>`
+- No-op (exit 0 with a message) if the orchestrator is already complete
+
+#### `ccc orchestrator list`
+
+Lists orchestrators by reading directories under `~/.claude/orchestrators/`.
+
+- Flags: `--all` (include completed), `--json`
+- Default text output: one line per orchestrator with name, status, project, started_at, thread count
+
 ### `ccc help` / `ccc -h` / `ccc --help`
 
 Prints usage information.
