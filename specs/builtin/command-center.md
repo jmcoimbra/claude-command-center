@@ -323,11 +323,13 @@ When the expanded multi-column view is active, a tab bar appears below the heade
 | Agents | `enqueued`, `running`, `blocked` |
 | Review | `review`, `failed` |
 | All | all non-terminal (everything except `completed`, `dismissed`) |
+| Done | terminal items (`completed`, `dismissed`) |
 
-- **Tab order**: Focus, New, Backlog, Agents, Review, All
+- **Tab order**: Focus, New, Backlog, Agents, Review, All, Done
 - **Default tab**: Focus
 - Pressing `space` from collapsed view expands into the todo list and lands on the Focus tab
 - `tab` cycles filter forward, `shift+tab` cycles backward
+- Cycling wraps: forward from Done goes back to Focus; backward from Focus goes to Done
 - Switching tabs resets cursor and scroll offset to 0
 - `b` key is a shortcut that expands the view (if collapsed) and jumps directly to the Backlog tab
 

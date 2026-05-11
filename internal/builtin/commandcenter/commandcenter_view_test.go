@@ -2201,7 +2201,7 @@ func TestView_NoToDoTabInExpandedView(t *testing.T) {
 }
 
 // TestView_FocusTabOrderCycles verifies the tab cycling order:
-// Focus -> New -> Backlog -> Agents -> Review -> All -> Focus (wraps)
+// Focus -> New -> Backlog -> Agents -> Review -> All -> Done -> Focus (wraps)
 func TestView_FocusTabOrderCycles(t *testing.T) {
 	p := testPluginWithTodos(t, []db.Todo{
 		{ID: "t1", Title: "Task one", Status: db.StatusBacklog, Source: "manual", CreatedAt: time.Now(), Focus: true},
@@ -2238,7 +2238,12 @@ func TestView_FocusTabOrderCycles(t *testing.T) {
 		t.Errorf("expected 'all', got %q", p.triageFilter)
 	}
 
-	p.HandleKey(keyMsg("tab")) // all -> focus (wrap)
+	p.HandleKey(keyMsg("tab")) // all -> done
+	if p.triageFilter != "done" {
+		t.Errorf("expected 'done', got %q", p.triageFilter)
+	}
+
+	p.HandleKey(keyMsg("tab")) // done -> focus (wrap)
 	if p.triageFilter != "focus" {
 		t.Errorf("expected 'focus' (wrap), got %q", p.triageFilter)
 	}
@@ -2638,11 +2643,16 @@ func TestView_BUG146_FilterWorksAfterModalDismiss(t *testing.T) {
 		t.Fatal("modal should be closed")
 	}
 
-	// Switch to focus tab via Tab key cycling
-	// From "all" -> "focus" (wraps around)
+	// Switch to focus tab via Tab key cycling.
+	// Cycle order is Focus -> New -> Backlog -> Agents -> Review -> All -> Done -> Focus (wraps).
+	// From "all" we tab twice: "all" -> "done" -> "focus".
+	p.HandleKey(specialKeyMsg(tea.KeyTab))
+	if p.triageFilter != "done" {
+		t.Fatalf("expected triageFilter 'done' after tab from 'all', got %q", p.triageFilter)
+	}
 	p.HandleKey(specialKeyMsg(tea.KeyTab))
 	if p.triageFilter != "focus" {
-		t.Fatalf("expected triageFilter 'focus' after tab from 'all', got %q", p.triageFilter)
+		t.Fatalf("expected triageFilter 'focus' after tab from 'done' (wrap), got %q", p.triageFilter)
 	}
 
 	// filteredTodos should only return focused items
