@@ -276,8 +276,10 @@ type RoleMatch struct {
 
 // ResolveRole searches all active orchestrators for threads whose worktree
 // (or, as fallback, project) matches the supplied paths. Empty inputs are
-// ignored. Returns all matches; callers decide how to disambiguate.
-func ResolveRole(worktree, project string) ([]RoleMatch, error) {
+// ignored. Threads whose status is "complete" are excluded unless
+// includeCompleted is true. Returns all matches; callers decide how to
+// disambiguate.
+func ResolveRole(worktree, project string, includeCompleted bool) ([]RoleMatch, error) {
 	orchs, err := List(false)
 	if err != nil {
 		return nil, err
@@ -285,6 +287,9 @@ func ResolveRole(worktree, project string) ([]RoleMatch, error) {
 	var matches []RoleMatch
 	for _, o := range orchs {
 		for _, t := range o.Threads {
+			if !includeCompleted && t.Status == StatusComplete {
+				continue
+			}
 			role := t.Role
 			if role == "" {
 				role = t.Name

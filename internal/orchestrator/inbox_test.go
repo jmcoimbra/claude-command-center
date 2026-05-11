@@ -214,7 +214,7 @@ func TestResolveRole_MatchesWorktreeFirst(t *testing.T) {
 	if err := AddThread("o2", Thread{Name: "b", Project: "/tmp/q"}); err != nil {
 		t.Fatalf("AddThread b: %v", err)
 	}
-	matches, err := ResolveRole("/tmp/p/.wt/a", "")
+	matches, err := ResolveRole("/tmp/p/.wt/a", "", false)
 	if err != nil {
 		t.Fatalf("ResolveRole: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestResolveRole_FallsBackToProject(t *testing.T) {
 	if err := AddThread("o", Thread{Name: "main", Project: "/tmp/p"}); err != nil {
 		t.Fatalf("AddThread: %v", err)
 	}
-	matches, err := ResolveRole("", "/tmp/p")
+	matches, err := ResolveRole("", "/tmp/p", false)
 	if err != nil {
 		t.Fatalf("ResolveRole: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestResolveRole_NoMatchReturnsEmpty(t *testing.T) {
 	if err := Init("o", "/tmp/p"); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	matches, err := ResolveRole("/nowhere", "/also-nowhere")
+	matches, err := ResolveRole("/nowhere", "/also-nowhere", false)
 	if err != nil {
 		t.Fatalf("ResolveRole: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestResolveRole_ReturnsStoredRole(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AddThread: %v", err)
 	}
-	matches, err := ResolveRole("/tmp/p/.wt/spine", "")
+	matches, err := ResolveRole("/tmp/p/.wt/spine", "", false)
 	if err != nil {
 		t.Fatalf("ResolveRole: %v", err)
 	}
@@ -291,12 +291,77 @@ func TestResolveRole_FallsBackToThreadName(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("AddThread: %v", err)
 	}
-	matches, err := ResolveRole("/tmp/p/.wt/alpha", "")
+	matches, err := ResolveRole("/tmp/p/.wt/alpha", "", false)
 	if err != nil {
 		t.Fatalf("ResolveRole: %v", err)
 	}
 	if len(matches) != 1 || matches[0].Role != "alpha" {
 		t.Errorf("expected role fallback to thread name 'alpha', got %+v", matches)
+	}
+}
+
+func TestResolveRole_ExcludesCompletedByDefault(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", "/tmp/p"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := AddThread("o", Thread{
+		Name:     "wave-0",
+		Project:  "/tmp/p",
+		Worktree: "/tmp/p/.wt/shared",
+	}); err != nil {
+		t.Fatalf("AddThread wave-0: %v", err)
+	}
+	if err := AddThread("o", Thread{
+		Name:     "wave-1",
+		Project:  "/tmp/p",
+		Worktree: "/tmp/p/.wt/shared",
+	}); err != nil {
+		t.Fatalf("AddThread wave-1: %v", err)
+	}
+	if err := CompleteThread("o", "wave-0"); err != nil {
+		t.Fatalf("CompleteThread: %v", err)
+	}
+
+	matches, err := ResolveRole("/tmp/p/.wt/shared", "", false)
+	if err != nil {
+		t.Fatalf("ResolveRole: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Role != "wave-1" {
+		t.Errorf("expected only wave-1 (wave-0 is complete), got %+v", matches)
+	}
+
+	allMatches, err := ResolveRole("/tmp/p/.wt/shared", "", true)
+	if err != nil {
+		t.Fatalf("ResolveRole include-completed: %v", err)
+	}
+	if len(allMatches) != 2 {
+		t.Errorf("expected both threads with include-completed, got %+v", allMatches)
+	}
+}
+
+func TestResolveRole_IncludeCompletedOptIn(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", "/tmp/p"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := AddThread("o", Thread{
+		Name:     "wave-0",
+		Project:  "/tmp/p",
+		Worktree: "/tmp/p/.wt/wave-0",
+	}); err != nil {
+		t.Fatalf("AddThread wave-0: %v", err)
+	}
+	if err := CompleteThread("o", "wave-0"); err != nil {
+		t.Fatalf("CompleteThread: %v", err)
+	}
+
+	matches, err := ResolveRole("/tmp/p/.wt/wave-0", "", true)
+	if err != nil {
+		t.Fatalf("ResolveRole: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Role != "wave-0" {
+		t.Errorf("expected completed thread returned with opt-in, got %+v", matches)
 	}
 }
 

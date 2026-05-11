@@ -77,7 +77,7 @@ func printOrchInboxUsage() {
 	fmt.Fprintln(os.Stderr, "  send [--orchestrator N] (--to R | --thread T) --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
 	fmt.Fprintln(os.Stderr, "  list [--orchestrator N] [--to R] [--from S] [--kind K] [--unread] [--all] [--json]")
 	fmt.Fprintln(os.Stderr, "  mark-read [--orchestrator N] --to R [--up-to N]")
-	fmt.Fprintln(os.Stderr, "  resolve-role [--worktree W] [--project P] [--json]")
+	fmt.Fprintln(os.Stderr, "  resolve-role [--worktree W] [--project P] [--include-completed] [--json]")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "  --orchestrator overrides session-topic resolution. Workers without an ORCHESTRATE: topic should pass it explicitly.")
 }
@@ -682,10 +682,11 @@ func runOrchInboxResolveRole(args []string) error {
 	worktree := fs.String("worktree", "", "Worktree path to match")
 	project := fs.String("project", "", "Project path to match (fallback)")
 	asJSON := fs.Bool("json", false, "Emit JSON array of matches")
+	includeCompleted := fs.Bool("include-completed", false, "Include threads whose status is 'complete' (excluded by default)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	matches, err := orchestrator.ResolveRole(*worktree, *project)
+	matches, err := orchestrator.ResolveRole(*worktree, *project, *includeCompleted)
 	if err != nil {
 		return err
 	}

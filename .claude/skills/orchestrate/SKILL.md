@@ -22,6 +22,20 @@ In all cases, the skill **does not start executing the task**. After it runs, ha
 
 ## Step 1: Resolve which orchestrator and role this terminal belongs to
 
+### CLI surface (don't guess)
+
+The orchestrator CLI is narrower than it looks. Only these verbs/flags exist:
+
+- `ccc orchestrator list [--all] [--json]` — list active orchestrators (with `--json`, each entry includes `project`, `status`, `created_at`, etc.)
+- `ccc orchestrator inbox send|list|mark-read|resolve-role` — see flags below
+- `ccc orchestrator inbox list [--orchestrator N] [--to R] [--from S] [--kind K] [--unread] [--all] [--json]`
+- `ccc orchestrator inbox resolve-role [--worktree W] [--project P] [--include-completed] [--json]` — **excludes completed threads by default.** A role the orchestrator marked done via `thread complete` will not appear unless `--include-completed` is passed (rare: cleanup or postscript on a wrapped-up thread).
+- `ccc orchestrator status [--json]` — **current session only**, no `--orchestrator` flag
+
+**Does NOT exist:** `thread list`, `status --orchestrator <name>`, any other thread-enumeration verb, subcommand-level `--help`. The authoritative reference is `ccc orchestrator --help`. Don't invent verbs — if it isn't in that top-level help, it isn't there.
+
+### Resolve by worktree first
+
 ```bash
 PWD_NOW=$(pwd)
 ccc orchestrator inbox resolve-role --worktree "$PWD_NOW" --project "$PWD_NOW" --json
@@ -31,9 +45,13 @@ The output is a JSON array of `{orchestrator, role, project, worktree}` entries.
 
 - **If `$ARGUMENTS` was provided**, filter to entries with matching `role`. If exactly one matches, use it. If none match, ask the user whether to proceed anyway (orchestrator may not have created the thread yet); they can paste the orchestrator name explicitly.
 - **If `$ARGUMENTS` was empty**, the array determines the action:
-  - Empty array → ask the user for the orchestrator name and role.
-  - Exactly one entry → use it.
-  - Multiple entries → show the list and ask which one.
+  - **Empty array** → the worktree isn't bound to a thread yet (common for a fresh `ccc/<date>` branch where the orchestrator wrote a handoff but the role's worktree metadata wasn't set). Fall back to discovery instead of asking the user blind:
+    1. `ccc orchestrator list --json` — find active orchestrators whose `project` matches the current repo root (`git rev-parse --show-toplevel`).
+    2. If **exactly one** orchestrator matches this project, list its unread handoffs with `ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --kind handoff --unread --json` and group by the `to` field. Each unique `to` is a candidate role.
+    3. Present the candidate roles as an `AskUserQuestion`. Use the handoff's `topic` field as the human-readable label (e.g. `"query (wave 1b: query-svc brainstorm)"`), not the bare role name — `topic` is what the orchestrator named the work, so it's far more recognizable than `query`.
+    4. If **zero** orchestrators match the project, or **multiple** match with ambiguous projects, only then fall back to a free-text prompt asking the user to paste the orchestrator name and role.
+  - **Exactly one entry** → use it.
+  - **Multiple entries** → show the list and ask which one (prefer `topic` as the label here too — see Step 3a for how it's extracted).
 
 After this step you have `$ORCH_NAME` and `$ROLE`.
 
@@ -74,8 +92,10 @@ Compare current pwd / branch to the handoff's `project` / `branch` / `worktree`.
 
 ### Set the session topic
 
+The statusline and `remind-session-topic` hook resolve the session id from `~/.claude/session-topics/pid-$PPID.map` — **not** from `$CCC_SESSION_ID`. Always write the topic to the pid-map-resolved file (matches what `/set-topic` does), otherwise the topic lands in an orphan file and the statusline stays blank.
+
 ```bash
-SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
+SESSION_ID=$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)
 if [ -z "$SESSION_ID" ]; then
   echo "Could not resolve session ID — /orchestrate needs a Claude session"
   exit 1
@@ -88,6 +108,8 @@ If a topic is already set on this session and it differs, ask before overwriting
 
 ### Write the checkin
 
+The checkin's `--session-id` is the CCC-side session correlation id; prefer `$CCC_SESSION_ID` and fall back to the pid-map id only if it's unset. (Topic writes use the pid-map id above; the inbox `session_id` field uses this one.)
+
 ```bash
 PROJECT=$(pwd)
 BRANCH=$(git branch --show-current 2>/dev/null || echo "")
@@ -99,6 +121,7 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     WORKTREE="$TOPLEVEL"
   fi
 fi
+CHECKIN_SESSION_ID="${CCC_SESSION_ID:-$SESSION_ID}"
 
 ccc orchestrator inbox send \
   --orchestrator "$ORCH_NAME" \
@@ -108,7 +131,7 @@ ccc orchestrator inbox send \
   --project "$PROJECT" \
   --branch "$BRANCH" \
   --worktree "$WORKTREE" \
-  --session-id "$SESSION_ID" \
+  --session-id "$CHECKIN_SESSION_ID" \
   --body "Picked up handoff. Topic set to \"$WORKER_TOPIC\". Ready to start."
 ```
 
@@ -145,8 +168,10 @@ Determine the topic to set:
 1. Look at all prior handoffs to this role: `ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --kind handoff --json`. If any have a non-empty `topic`, use the most recent one's `topic`.
 2. Otherwise fall back to `$ROLE`.
 
+Resolve `SESSION_ID` from the pid map (the statusline's source of truth), **not** `$CCC_SESSION_ID` — those can diverge and a write to the wrong file leaves the statusline blank.
+
 ```bash
-SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
+SESSION_ID=$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)
 if [ -z "$SESSION_ID" ]; then
   echo "Could not resolve session ID — /orchestrate needs a Claude session"
   exit 1
@@ -209,5 +234,6 @@ Do **not** start executing anything in this turn. Wait for the user.
 ## Notes
 
 - **Pass `--orchestrator $ORCH_NAME` to every inbox call.** Worker sessions have their own topic (the worker topic, e.g. `wave-0b`), not `ORCHESTRATE: ...`. The flag bypasses topic resolution so we never have to fake one.
+- **`topic` is a first-class field on handoff messages.** It carries two jobs: it's the worker-topic the orchestrator wants set on the worker session (used in Step 3a/3b), and it's the most human-readable label for the role. Anywhere this skill displays a role to the user — discovery prompts, multi-entry disambiguation, the summary block — prefer the handoff's `topic` over the bare role name (e.g. `"query (wave 1b: query-svc brainstorm)"` beats `"query"`). Fall back to the role name only when no `topic` is set.
 - **No clipboard handling here.** This is the inbox-based version of the workflow. The clipboard `PASTE INTO` flow has been retired in favor of durable, queryable messages.
 - **Don't include secrets or large file dumps in the checkin body.** Keep it a short status sentence. The orchestrator already has the task body.
