@@ -237,8 +237,9 @@ Prints current state by reading `state.md`.
 
 Adds a thread under `# Threads` in `state.md`.
 
-- Flags: `--name` (required), `--project`, `--branch`, `--worktree`, `--session-id`, `--status` (default `planning`)
+- Flags: `--name` (required), `--role` (optional), `--project`, `--branch`, `--worktree`, `--session-id`, `--status` (default `planning`)
 - Thread name must be unique within the orchestrator
+- `--role` sets the short routing key used by `inbox.jsonl`. When omitted, the role line is not written and the thread name is used as the role on read.
 
 #### `ccc orchestrator thread set-status`
 
@@ -246,6 +247,14 @@ Updates a thread's `status:` line and appends a `state.log` entry.
 
 - Flags: `--name` (required), `--status` (required), `--reason` (optional)
 - Status is freeform text — typical values are `planning`, `in-flight`, `blocked`, `awaiting-user`, `complete`
+
+#### `ccc orchestrator thread set-role`
+
+Sets or updates a thread's routing role and appends a `state.log` entry.
+
+- Flags: `--name` (required), `--role` (required)
+- Fails with a clear error if no thread with that name exists
+- Used to backfill the role onto threads created before the `role` field existed
 
 #### `ccc orchestrator thread complete`
 

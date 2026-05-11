@@ -41,8 +41,11 @@ type Orchestrator struct {
 
 // Thread tracks one working session inside an orchestrator. Status is freeform
 // text — typical values are planning, in-flight, blocked, awaiting-user, complete.
+// Role is the short routing key used by inbox.jsonl; when empty, the thread
+// name is used as the role for backwards compatibility.
 type Thread struct {
 	Name        string
+	Role        string
 	Status      string
 	Project     string
 	Branch      string

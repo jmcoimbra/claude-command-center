@@ -66,6 +66,45 @@ func CompleteThread(name, threadName string) error {
 	return SetThreadStatus(name, threadName, "complete", "")
 }
 
+// SetThreadRole sets or updates the routing role for a thread. Used to backfill
+// the role onto threads created before the role field existed.
+func SetThreadRole(name, threadName, role string) error {
+	if role == "" {
+		return fmt.Errorf("role is required")
+	}
+	o, err := Load(name)
+	if err != nil {
+		return err
+	}
+	idx := findThread(o, threadName)
+	if idx < 0 {
+		return fmt.Errorf("thread %q not found", threadName)
+	}
+	o.Threads[idx].Role = role
+	if err := Save(o); err != nil {
+		return err
+	}
+	return AppendStateLog(name, fmt.Sprintf("thread set-role %s role=%s", threadName, role))
+}
+
+// RoleForThread returns the routing role for the named thread: the stored Role
+// if non-empty, otherwise the thread Name.
+func RoleForThread(name, threadName string) (string, error) {
+	o, err := Load(name)
+	if err != nil {
+		return "", err
+	}
+	idx := findThread(o, threadName)
+	if idx < 0 {
+		return "", fmt.Errorf("thread %q not found", threadName)
+	}
+	t := o.Threads[idx]
+	if t.Role != "" {
+		return t.Role, nil
+	}
+	return t.Name, nil
+}
+
 // AddDecision appends a decision to the orchestrator. If thread is non-empty
 // the decision is tagged with that thread.
 func AddDecision(name, body, thread string) error {

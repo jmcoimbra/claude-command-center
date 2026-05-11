@@ -297,3 +297,197 @@ func TestRunOrchInbox_ResolveRoleMatchesWorktree(t *testing.T) {
 		t.Errorf("expected alpha:a, got %q", got)
 	}
 }
+
+func TestRunOrchThreadAdd_StoresRoleFlag(t *testing.T) {
+	root := withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"thread", "add",
+		"--name", "wave 0c: typed API spine",
+		"--role", "spine",
+		"--worktree", "/proj/.wt/spine",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "alpha", "state.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- role: spine") {
+		t.Errorf("state.md missing role line:\n%s", string(data))
+	}
+	// resolve-role returns the stored role, not the thread name
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	if err := runOrchestrator([]string{"inbox", "resolve-role", "--worktree", "/proj/.wt/spine"}); err != nil {
+		t.Fatalf("resolve-role: %v", err)
+	}
+	w.Close()
+	os.Stdout = old
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	if got := strings.TrimSpace(string(buf[:n])); got != "alpha:spine" {
+		t.Errorf("expected alpha:spine, got %q", got)
+	}
+}
+
+func TestRunOrchThreadSetRole_UpdatesExisting(t *testing.T) {
+	withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"thread", "add",
+		"--name", "wave 0c: typed API spine",
+		"--worktree", "/proj/.wt/spine",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Before set-role, resolve-role falls back to the thread name.
+	r, w, _ := os.Pipe()
+	old := os.Stdout
+	os.Stdout = w
+	if err := runOrchestrator([]string{"inbox", "resolve-role", "--worktree", "/proj/.wt/spine"}); err != nil {
+		t.Fatalf("resolve-role pre: %v", err)
+	}
+	w.Close()
+	os.Stdout = old
+	buf := make([]byte, 1024)
+	n, _ := r.Read(buf)
+	if got := strings.TrimSpace(string(buf[:n])); got != "alpha:wave 0c: typed API spine" {
+		t.Errorf("pre-set-role expected fallback to thread name, got %q", got)
+	}
+	// After set-role, resolve-role returns the stored role.
+	if err := runOrchestrator([]string{"thread", "set-role",
+		"--name", "wave 0c: typed API spine",
+		"--role", "spine",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r, w, _ = os.Pipe()
+	old = os.Stdout
+	os.Stdout = w
+	if err := runOrchestrator([]string{"inbox", "resolve-role", "--worktree", "/proj/.wt/spine"}); err != nil {
+		t.Fatalf("resolve-role post: %v", err)
+	}
+	w.Close()
+	os.Stdout = old
+	n, _ = r.Read(buf)
+	if got := strings.TrimSpace(string(buf[:n])); got != "alpha:spine" {
+		t.Errorf("post-set-role expected alpha:spine, got %q", got)
+	}
+}
+
+func TestRunOrchThreadSetRole_RequiresFlags(t *testing.T) {
+	withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	cases := [][]string{
+		{"thread", "set-role"},                           // missing both
+		{"thread", "set-role", "--name", "a"},            // missing --role
+		{"thread", "set-role", "--role", "x"},            // missing --name
+	}
+	for _, args := range cases {
+		if err := runOrchestrator(args); err == nil {
+			t.Errorf("%v: expected failure", args)
+		}
+	}
+}
+
+func TestRunOrchInboxSend_ThreadFlagResolvesRole(t *testing.T) {
+	root := withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"thread", "add",
+		"--name", "wave 0c: typed API spine",
+		"--role", "spine",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Send addressed via --thread; must land under "to":"spine".
+	if err := runOrchestrator([]string{"inbox", "send",
+		"--thread", "wave 0c: typed API spine",
+		"--kind", "handoff",
+		"--body", "do the thing",
+	}); err != nil {
+		t.Fatalf("send --thread: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "alpha", "inbox.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"to":"spine"`) {
+		t.Errorf("inbox message not routed to role 'spine':\n%s", string(data))
+	}
+}
+
+func TestRunOrchInboxSend_ThreadFlagFallsBackToName(t *testing.T) {
+	root := withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	// Thread has no role; --thread should fall back to thread name.
+	if err := runOrchestrator([]string{"thread", "add", "--name", "alpha-thread"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"inbox", "send",
+		"--thread", "alpha-thread",
+		"--kind", "handoff",
+		"--body", "x",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	data, _ := os.ReadFile(filepath.Join(root, "alpha", "inbox.jsonl"))
+	if !strings.Contains(string(data), `"to":"alpha-thread"`) {
+		t.Errorf("expected fallback to thread name, inbox:\n%s", string(data))
+	}
+}
+
+func TestRunOrchInboxSend_ThreadAndToAreMutuallyExclusive(t *testing.T) {
+	withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runOrchestrator([]string{"thread", "add", "--name", "alpha-thread", "--role", "spine"}); err != nil {
+		t.Fatal(err)
+	}
+	err := runOrchestrator([]string{"inbox", "send",
+		"--to", "spine",
+		"--thread", "alpha-thread",
+		"--kind", "handoff",
+		"--body", "x",
+	})
+	if err == nil {
+		t.Fatal("expected --to + --thread to fail")
+	}
+}
+
+func TestRunOrchInboxSend_RequiresToOrThread(t *testing.T) {
+	withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	// Neither --to nor --thread, but --kind and --body provided -- still must fail.
+	err := runOrchestrator([]string{"inbox", "send", "--kind", "handoff", "--body", "x"})
+	if err == nil {
+		t.Fatal("expected missing --to/--thread to fail")
+	}
+}
+
+func TestRunOrchInboxSend_ThreadFlagUnknownThreadFails(t *testing.T) {
+	withOrchestratorTopic(t, "alpha")
+	if err := runOrchestrator([]string{"init"}); err != nil {
+		t.Fatal(err)
+	}
+	err := runOrchestrator([]string{"inbox", "send",
+		"--thread", "ghost",
+		"--kind", "handoff",
+		"--body", "x",
+	})
+	if err == nil {
+		t.Fatal("expected unknown thread to fail")
+	}
+}

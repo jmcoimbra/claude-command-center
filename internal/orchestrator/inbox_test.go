@@ -254,6 +254,52 @@ func TestResolveRole_NoMatchReturnsEmpty(t *testing.T) {
 	}
 }
 
+func TestResolveRole_ReturnsStoredRole(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", "/tmp/p"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := AddThread("o", Thread{
+		Name:     "wave 0c: typed API spine",
+		Role:     "spine",
+		Project:  "/tmp/p",
+		Worktree: "/tmp/p/.wt/spine",
+	}); err != nil {
+		t.Fatalf("AddThread: %v", err)
+	}
+	matches, err := ResolveRole("/tmp/p/.wt/spine", "")
+	if err != nil {
+		t.Fatalf("ResolveRole: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d (%+v)", len(matches), matches)
+	}
+	if matches[0].Role != "spine" {
+		t.Errorf("expected role 'spine' (stored), got %q", matches[0].Role)
+	}
+}
+
+func TestResolveRole_FallsBackToThreadName(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", "/tmp/p"); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := AddThread("o", Thread{
+		Name:     "alpha",
+		Project:  "/tmp/p",
+		Worktree: "/tmp/p/.wt/alpha",
+	}); err != nil {
+		t.Fatalf("AddThread: %v", err)
+	}
+	matches, err := ResolveRole("/tmp/p/.wt/alpha", "")
+	if err != nil {
+		t.Fatalf("ResolveRole: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Role != "alpha" {
+		t.Errorf("expected role fallback to thread name 'alpha', got %+v", matches)
+	}
+}
+
 func TestAppendMessage_PreservesFieldsOnDisk(t *testing.T) {
 	root := withTempRoot(t)
 	if err := Init("o", ""); err != nil {

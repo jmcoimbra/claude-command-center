@@ -23,6 +23,9 @@ func renderStateMD(o *Orchestrator) string {
 	b.WriteString("# Threads\n\n")
 	for _, t := range o.Threads {
 		fmt.Fprintf(&b, "## %s\n", t.Name)
+		if t.Role != "" {
+			fmt.Fprintf(&b, "- role: %s\n", t.Role)
+		}
 		fmt.Fprintf(&b, "- status: %s\n", t.Status)
 		fmt.Fprintf(&b, "- project: %s\n", t.Project)
 		fmt.Fprintf(&b, "- branch: %s\n", t.Branch)
@@ -169,6 +172,8 @@ func parseStateMD(s string) (*Orchestrator, error) {
 				k = strings.TrimSpace(k)
 				v = strings.TrimSpace(v)
 				switch k {
+				case "role":
+					threadBuf.Role = v
 				case "status":
 					threadBuf.Status = v
 				case "project":

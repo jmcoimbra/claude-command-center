@@ -28,7 +28,7 @@ In v1, an orchestrator session can only see the orchestrator it owns. There is n
 
 - **Identity by topic** — an orchestrator session is identified by setting its session topic to `ORCHESTRATE: <name>`. CLI subcommands resolve "which orchestrator is this session" by reading the session topic file and stripping the prefix.
 
-- **Role** — a short handle (`a`, `b`, `c`, `wave-0b`, etc.) the orchestrator assigns to a worker. Role names are also thread names — there is no separate role concept. A worker terminal claims a role by running `/orchestrate <role>`. Once claimed, the role is bound to the worker's project/branch/worktree/session-id via the thread record.
+- **Role** — a short handle (`a`, `b`, `c`, `wave-0b`, etc.) the orchestrator assigns to a worker. A thread may carry an explicit `role` (e.g. `spine`) that is distinct from its human-readable name (e.g. `wave 0c: typed API spine`). When the role is unset, the thread name is used as the role for backwards compatibility. The role is the routing key on `inbox.jsonl` — workers query their own role via `inbox resolve-role` and the orchestrator addresses messages with `--to <role>` (or `--thread <name>`, which resolves to the same role). A worker terminal claims a role by running `/orchestrate <role>`.
 
 - **Inbox** — the append-only `inbox.jsonl` file inside an orchestrator's directory. Every cross-session message (orchestrator-to-worker handoffs, worker-to-orchestrator checkins, freeform updates and questions) is a line in this file. Replaces the clipboard as the durable transport.
 
@@ -66,6 +66,7 @@ completed_at:
 # Threads
 
 ## postgres-migration
+- role: postgres
 - status: in-flight
 - project: ~/Personal/sherlock
 - branch: feature/postgres
@@ -88,6 +89,8 @@ completed_at:
 ```
 
 Question IDs are short identifiers (`Q1`, `Q2`, ...) assigned at add time, used by `question resolve`.
+
+The `role` line is optional. When present it is the routing key used by `inbox.jsonl` for messages addressed to this thread. When absent, the thread name is used as the role (backwards-compatible with pre-`role`-field state.md files).
 
 ### inbox.jsonl format
 
@@ -136,7 +139,7 @@ There is no separate "attach" step — binding a session ID after the fact is ju
 
 ### Role resolution from worktree
 
-A worker terminal opened in a worktree that already maps to an existing thread (because a previous session for that role checked in earlier) can look up its own role without being told. `ccc orchestrator inbox resolve-role --worktree <path>` scans active orchestrators' threads for one whose `worktree` (or `project`) matches and returns `<orchestrator>:<role>`. This lets a fresh session in the same worktree run `/check-messages` and pick up where the previous one left off without re-typing the role name.
+A worker terminal opened in a worktree that already maps to an existing thread (because a previous session for that role checked in earlier) can look up its own role without being told. `ccc orchestrator inbox resolve-role --worktree <path>` scans active orchestrators' threads for one whose `worktree` (or `project`) matches and returns `<orchestrator>:<role>`. The role returned is the thread's stored `role` field if set, otherwise the thread name. This lets a fresh session in the same worktree run `/check-messages` and pick up where the previous one left off without re-typing the role name.
 
 ## Lifecycle
 
@@ -169,9 +172,11 @@ Documented in detail in `specs/core/cli.md`. At a glance:
 
 - `ccc orchestrator status [--json]` — print state from `state.md`.
 
-- `ccc orchestrator thread add --name <n> [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>] [--status <s>]` — add a thread row.
+- `ccc orchestrator thread add --name <n> [--role <r>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>] [--status <s>]` — add a thread row. `--role` is the short routing key used by inbox messages; when omitted the thread name is used as the role.
 
 - `ccc orchestrator thread set-status --name <n> --status <s> [--reason <r>]` — update a thread's status.
+
+- `ccc orchestrator thread set-role --name <n> --role <r>` — set or update the thread's routing role. Used to backfill the role onto threads created before the `role` field existed.
 
 - `ccc orchestrator thread complete --name <n>` — shorthand for setting status to `complete`.
 
@@ -185,7 +190,7 @@ Documented in detail in `specs/core/cli.md`. At a glance:
 
 - `ccc orchestrator paste-header --thread <n>` — emit the standardized "PASTE INTO" block. Retained for skills that still want a clipboard transport.
 
-- `ccc orchestrator inbox send [--orchestrator <name>] --to <recipient> --kind <kind> --body <text> [--from <sender>] [--topic <t>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>]` — append a message to an orchestrator's inbox. Sender defaults to `orchestrator`. Recipient `*` broadcasts.
+- `ccc orchestrator inbox send [--orchestrator <name>] (--to <recipient> | --thread <name>) --kind <kind> --body <text> [--from <sender>] [--topic <t>] [--project <p>] [--branch <b>] [--worktree <w>] [--session-id <id>]` — append a message to an orchestrator's inbox. Exactly one of `--to` or `--thread` must be supplied; passing both is an error. `--thread <name>` looks up the thread's role (falling back to the thread name) and uses it as the recipient. Sender defaults to `orchestrator`. Recipient `*` broadcasts.
 
 - `ccc orchestrator inbox list [--orchestrator <name>] [--to <recipient>] [--from <sender>] [--kind <kind>] [--unread] [--json] [--all]` — list inbox messages, optionally filtered. `--unread` requires `--to` and reads `cursors.json` to filter to messages with id greater than the recipient's cursor. Default output is one human-readable line per message; `--json` emits a JSON array.
 
@@ -251,3 +256,13 @@ The orchestrator name is resolved from the current session topic (`ORCHESTRATE: 
 - Reading `inbox.jsonl` when the file does not yet exist returns an empty list, not an error.
 - `inbox send/list/mark-read --orchestrator <name>` succeeds without an `ORCHESTRATE:` session topic. The flag overrides topic resolution.
 - When `--orchestrator` is omitted and no session topic is set, the same verbs fail with a clear error pointing at both remediation paths (set a topic OR pass the flag).
+
+### Roles
+
+- `thread add --name N --role R` persists `role: R` under the thread in `state.md`. A subsequent `Load` round-trips `Thread.Role == "R"`.
+- `thread add --name N` (no `--role`) leaves `Thread.Role` empty on disk. `resolve-role --worktree <thread worktree>` returns `<orchestrator>:N` (falls back to the thread name).
+- `thread set-role --name N --role R` updates an existing thread's role; subsequent `resolve-role` returns `<orchestrator>:R`.
+- `thread set-role --name <missing>` fails with a clear error.
+- `inbox send --thread N` resolves the role from the thread record (stored role, falling back to the thread name) and routes the message there; recipients matching that role see it via `--unread --to <role>`.
+- `inbox send --to X --thread N` (both supplied) fails with a clear "mutually exclusive" error.
+- Pre-existing `state.md` files written before the `role` field existed parse and re-render without losing data; threads without a `role` line continue to behave exactly as before.

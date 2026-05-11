@@ -285,10 +285,14 @@ func ResolveRole(worktree, project string) ([]RoleMatch, error) {
 	var matches []RoleMatch
 	for _, o := range orchs {
 		for _, t := range o.Threads {
+			role := t.Role
+			if role == "" {
+				role = t.Name
+			}
 			if matchesPath(t.Worktree, worktree) {
 				matches = append(matches, RoleMatch{
 					Orchestrator: o.Name,
-					Role:         t.Name,
+					Role:         role,
 					Project:      t.Project,
 					Worktree:     t.Worktree,
 				})
@@ -297,7 +301,7 @@ func ResolveRole(worktree, project string) ([]RoleMatch, error) {
 			if t.Worktree == "" && matchesPath(t.Project, project) {
 				matches = append(matches, RoleMatch{
 					Orchestrator: o.Name,
-					Role:         t.Name,
+					Role:         role,
 					Project:      t.Project,
 					Worktree:     t.Worktree,
 				})

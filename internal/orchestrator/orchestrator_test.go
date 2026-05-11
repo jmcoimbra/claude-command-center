@@ -494,5 +494,138 @@ func TestRenderParseFidelity(t *testing.T) {
 	}
 }
 
+func TestAddThread_RolePersistsAndRoundTrips(t *testing.T) {
+	root := withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "wave-0c", Role: "spine"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "o", "state.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "- role: spine") {
+		t.Errorf("state.md missing role line:\n%s", string(data))
+	}
+	loaded, err := Load("o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Threads[0].Role != "spine" {
+		t.Errorf("Role lost on round-trip: %q", loaded.Threads[0].Role)
+	}
+}
+
+func TestAddThread_RoleEmptyByDefault(t *testing.T) {
+	root := withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "o", "state.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "- role:") {
+		t.Errorf("state.md should not emit role line when empty:\n%s", string(data))
+	}
+	loaded, _ := Load("o")
+	if loaded.Threads[0].Role != "" {
+		t.Errorf("Role should be empty, got %q", loaded.Threads[0].Role)
+	}
+}
+
+func TestSetThreadRole_UpdatesAndLogs(t *testing.T) {
+	root := withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "wave 0c: typed API spine"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetThreadRole("o", "wave 0c: typed API spine", "spine"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _ := Load("o")
+	if loaded.Threads[0].Role != "spine" {
+		t.Errorf("Role not updated: %q", loaded.Threads[0].Role)
+	}
+	logData, _ := os.ReadFile(filepath.Join(root, "o", "state.log"))
+	if !strings.Contains(string(logData), "thread set-role wave 0c: typed API spine role=spine") {
+		t.Errorf("state.log missing set-role entry:\n%s", string(logData))
+	}
+}
+
+func TestSetThreadRole_UnknownThreadFails(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetThreadRole("o", "ghost", "spine"); err == nil {
+		t.Fatal("expected unknown thread to fail")
+	}
+}
+
+func TestSetThreadRole_RequiresRole(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetThreadRole("o", "alpha", ""); err == nil {
+		t.Fatal("expected empty role to fail")
+	}
+}
+
+func TestRoleForThread_StoredOverridesName(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "wave 0c", Role: "spine"}); err != nil {
+		t.Fatal(err)
+	}
+	role, err := RoleForThread("o", "wave 0c")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != "spine" {
+		t.Errorf("expected spine, got %q", role)
+	}
+}
+
+func TestRoleForThread_FallsBackToName(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddThread("o", Thread{Name: "alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	role, err := RoleForThread("o", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != "alpha" {
+		t.Errorf("expected alpha fallback, got %q", role)
+	}
+}
+
+func TestRoleForThread_UnknownThreadFails(t *testing.T) {
+	withTempRoot(t)
+	if err := Init("o", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := RoleForThread("o", "ghost"); err == nil {
+		t.Fatal("expected unknown thread to fail")
+	}
+}
+
 // dummy helper to surface unused-import warnings if the import block is wrong
 var _ = fmt.Sprintf

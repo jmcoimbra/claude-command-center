@@ -56,8 +56,9 @@ func printOrchestratorUsage() {
 	fmt.Fprintln(os.Stderr, "Verbs:")
 	fmt.Fprintln(os.Stderr, "  init [--project <path>]                Create or no-op the orchestrator named by current session topic")
 	fmt.Fprintln(os.Stderr, "  status [--json]                        Print current state")
-	fmt.Fprintln(os.Stderr, "  thread add --name N [flags]            Add a thread")
+	fmt.Fprintln(os.Stderr, "  thread add --name N [--role R] [flags] Add a thread")
 	fmt.Fprintln(os.Stderr, "  thread set-status --name N --status S  Update a thread's status")
+	fmt.Fprintln(os.Stderr, "  thread set-role --name N --role R      Set or update a thread's routing role")
 	fmt.Fprintln(os.Stderr, "  thread complete --name N               Mark a thread complete")
 	fmt.Fprintln(os.Stderr, "  decision add --body T [--thread N]     Append a decision")
 	fmt.Fprintln(os.Stderr, "  question add --body T [--thread N]     Append an open question")
@@ -73,7 +74,7 @@ func printOrchInboxUsage() {
 	fmt.Fprintln(os.Stderr, "Usage: ccc orchestrator inbox <verb> [flags]")
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Verbs:")
-	fmt.Fprintln(os.Stderr, "  send [--orchestrator N] --to R --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
+	fmt.Fprintln(os.Stderr, "  send [--orchestrator N] (--to R | --thread T) --kind K --body T [--from S] [--topic T] [--project P] [--branch B] [--worktree W] [--session-id ID]")
 	fmt.Fprintln(os.Stderr, "  list [--orchestrator N] [--to R] [--from S] [--kind K] [--unread] [--all] [--json]")
 	fmt.Fprintln(os.Stderr, "  mark-read [--orchestrator N] --to R [--up-to N]")
 	fmt.Fprintln(os.Stderr, "  resolve-role [--worktree W] [--project P] [--json]")
@@ -186,13 +187,15 @@ func printOrchestratorJSON(o *orchestrator.Orchestrator) error {
 
 func runOrchThread(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("orchestrator thread: subcommand required (add | set-status | complete)")
+		return fmt.Errorf("orchestrator thread: subcommand required (add | set-status | set-role | complete)")
 	}
 	switch args[0] {
 	case "add":
 		return runOrchThreadAdd(args[1:])
 	case "set-status":
 		return runOrchThreadSetStatus(args[1:])
+	case "set-role":
+		return runOrchThreadSetRole(args[1:])
 	case "complete":
 		return runOrchThreadComplete(args[1:])
 	default:
@@ -203,6 +206,7 @@ func runOrchThread(args []string) error {
 func runOrchThreadAdd(args []string) error {
 	fs := flag.NewFlagSet("orchestrator thread add", flag.ContinueOnError)
 	tName := fs.String("name", "", "Thread name (required)")
+	role := fs.String("role", "", "Routing role (optional; thread name is used when omitted)")
 	project := fs.String("project", "", "Project path")
 	branch := fs.String("branch", "", "Branch")
 	worktree := fs.String("worktree", "", "Worktree path")
@@ -221,6 +225,7 @@ func runOrchThreadAdd(args []string) error {
 	}
 	t := orchestrator.Thread{
 		Name:        *tName,
+		Role:        *role,
 		Status:      *status,
 		Project:     *project,
 		Branch:      *branch,
@@ -232,6 +237,27 @@ func runOrchThreadAdd(args []string) error {
 		return err
 	}
 	fmt.Printf("Thread %q added (status=%s)\n", *tName, *status)
+	return nil
+}
+
+func runOrchThreadSetRole(args []string) error {
+	fs := flag.NewFlagSet("orchestrator thread set-role", flag.ContinueOnError)
+	tName := fs.String("name", "", "Thread name (required)")
+	role := fs.String("role", "", "Routing role (required)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *tName == "" || *role == "" {
+		return fmt.Errorf("--name and --role are required")
+	}
+	name, err := resolveName()
+	if err != nil {
+		return err
+	}
+	if err := orchestrator.SetThreadRole(name, *tName, *role); err != nil {
+		return err
+	}
+	fmt.Printf("Thread %q role=%s\n", *tName, *role)
 	return nil
 }
 
@@ -509,7 +535,8 @@ func runOrchInbox(args []string) error {
 func runOrchInboxSend(args []string) error {
 	fs := flag.NewFlagSet("orchestrator inbox send", flag.ContinueOnError)
 	orchName := fs.String("orchestrator", "", "Orchestrator name (overrides session topic; required when invoked from a worker session)")
-	to := fs.String("to", "", "Recipient role or 'orchestrator' (required)")
+	to := fs.String("to", "", "Recipient role or 'orchestrator' (mutually exclusive with --thread)")
+	thread := fs.String("thread", "", "Thread name; resolved to the thread's role (mutually exclusive with --to)")
 	from := fs.String("from", "", "Sender (default: 'orchestrator' if topic is ORCHESTRATE:..., else required)")
 	kind := fs.String("kind", "", "Message kind (handoff|checkin|update|question|paste-back) (required)")
 	body := fs.String("body", "", "Message body (required, or '-' for stdin)")
@@ -521,8 +548,11 @@ func runOrchInboxSend(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if *to == "" {
-		return fmt.Errorf("--to is required")
+	if *to != "" && *thread != "" {
+		return fmt.Errorf("--to and --thread are mutually exclusive")
+	}
+	if *to == "" && *thread == "" {
+		return fmt.Errorf("one of --to or --thread is required")
 	}
 	if *kind == "" {
 		return fmt.Errorf("--kind is required")
@@ -538,13 +568,20 @@ func runOrchInboxSend(args []string) error {
 	if err != nil {
 		return err
 	}
+	recipient := *to
+	if *thread != "" {
+		recipient, err = orchestrator.RoleForThread(name, *thread)
+		if err != nil {
+			return err
+		}
+	}
 	sender := *from
 	if sender == "" {
 		sender = orchestrator.RecipientOrchestrator
 	}
 	id, err := orchestrator.AppendMessage(name, orchestrator.Message{
 		From:      sender,
-		To:        *to,
+		To:        recipient,
 		Kind:      *kind,
 		Body:      text,
 		Topic:     *topic,
@@ -556,7 +593,7 @@ func runOrchInboxSend(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Message %d sent (to=%s kind=%s)\n", id, *to, *kind)
+	fmt.Printf("Message %d sent (to=%s kind=%s)\n", id, recipient, *kind)
 	return nil
 }
 
