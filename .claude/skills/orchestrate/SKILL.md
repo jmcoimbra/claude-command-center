@@ -1,24 +1,20 @@
 ---
 name: orchestrate
-description: From a fresh worker session, claim an orchestrator-assigned role and intake its handoff. Reads the role's pending handoff from the orchestrator's inbox, sets the worker's session topic, and writes a checkin back to the inbox. Use right after opening a worker terminal in the target worktree.
+description: From a worker session, claim an orchestrator-assigned role (first intake) or reconnect to a previously claimed role after /clear. Reads the role's pending handoff (or recent history on reconnect), sets the worker's session topic, and writes a checkin back to the inbox. Use right after opening a worker terminal in the target worktree, or after /clear to re-establish context.
 user_invocable: true
 ---
 
-# Orchestrate (worker intake)
+# Orchestrate (worker intake or reconnect)
 
 The bookend on the worker side of an orchestrator → worker handoff. Used when:
 
-- The orchestrator session has written one or more handoff messages to its inbox, each addressed to a role name like `a`, `b`, or `wave-0b`.
-- The user has opened a fresh worker terminal in the target worktree.
-- The user types `/orchestrate <role>` (or just `/orchestrate` if role resolution by worktree finds a single match).
+- The orchestrator session has written one or more handoff messages to its inbox, each addressed to a role name like `a`, `b`, or `wave-0b`, and the user has opened a fresh worker terminal in the target worktree. (**First intake.**)
+- The user has been working in a worker session, ran `/clear` to free context (e.g., before `/ralph-review`), and wants to re-establish the role binding. (**Reconnect.**)
+- The orchestrator has sent a new handoff to a role that already finished a previous task. (**Re-handoff.**)
 
-`/orchestrate` does three things:
+`/orchestrate` figures out which state it's in by looking at the inbox and branches accordingly. The user just types `/orchestrate <role>` (or just `/orchestrate` if role resolution by worktree finds a single match) and the skill handles the rest.
 
-1. Finds the right orchestrator + handoff message for this role.
-2. Sets the session topic to whatever the orchestrator declared as the worker topic.
-3. Writes a `checkin` message back to the inbox with this terminal's project/branch/worktree/session-id.
-
-It does **not** start executing the task. After it runs, the orchestrator's next `/check-messages` (or `ccc orchestrator inbox list --unread --to orchestrator`) will see the checkin. When the user says "go," begin the actual work.
+In all cases, the skill **does not start executing the task**. After it runs, hand control back to the user; they will tell you when to begin (or continue).
 
 ## Arguments
 
@@ -41,19 +37,29 @@ The output is a JSON array of `{orchestrator, role, project, worktree}` entries.
 
 After this step you have `$ORCH_NAME` and `$ROLE`.
 
-## Step 2: Read the pending handoff
+## Step 2: Detect state (first intake vs. reconnect vs. re-handoff)
 
-Worker sessions don't have an `ORCHESTRATE:` topic, so pass `--orchestrator` explicitly. No env-var trick needed.
+The signal of "this role has already been intook before" is whether the role has ever sent a message *to* the orchestrator. Check both prior outbound and current unread inbound:
 
 ```bash
-ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --kind handoff --json
+PRIOR_OUTBOUND=$(ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --from "$ROLE" --json)
+UNREAD_INBOUND=$(ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --unread --json)
 ```
 
-From the JSON array, pick the message with the highest `id` whose `from == "orchestrator"`. That's the latest handoff.
+Classify (treat `[]` and empty as the same):
 
-If no handoff message exists for this role, tell the user:
+- `PRIOR_OUTBOUND` empty, `UNREAD_INBOUND` contains a handoff → **first intake.** Go to Step 3a.
+- `PRIOR_OUTBOUND` non-empty, `UNREAD_INBOUND` contains a handoff → **re-handoff.** Mention one line that prior work exists ("This role has prior history — picking up a new handoff."), then go to Step 3a.
+- `PRIOR_OUTBOUND` non-empty, `UNREAD_INBOUND` empty (or contains only non-handoff messages) → **reconnect.** Go to Step 3b.
+- `PRIOR_OUTBOUND` empty, `UNREAD_INBOUND` empty → no handoff yet. Tell the user:
 
-> No handoff message for role `<role>` in orchestrator `<orch>`. The orchestrator may not have written one yet, or this role may already have been intook by a previous session. Want me to check for unread messages instead?
+  > No handoff message for role `<role>` in orchestrator `<orch>`, and no prior history. The orchestrator may not have written one yet. Want me to check for any unread messages instead?
+
+  Then stop.
+
+## Step 3a: First intake or re-handoff (existing flow)
+
+From `UNREAD_INBOUND` (already fetched in Step 2), pick the message with the highest `id` whose `kind == "handoff"` and `from == "orchestrator"`. That's the handoff to process.
 
 Extract from the chosen message:
 
@@ -62,11 +68,11 @@ Extract from the chosen message:
 - `project`, `branch`, `worktree` — target metadata
 - `id` — needed later for `mark-read`
 
-## Step 3: Sanity-check the local environment
+### Sanity-check the local environment
 
 Compare current pwd / branch to the handoff's `project` / `branch` / `worktree`. If there's a mismatch, surface it as a warning and ask whether to proceed — never `cd` for the user.
 
-## Step 4: Set the session topic
+### Set the session topic
 
 ```bash
 SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
@@ -80,7 +86,7 @@ printf '%s' "$WORKER_TOPIC" > ~/.claude/session-topics/${SESSION_ID}.txt
 
 If a topic is already set on this session and it differs, ask before overwriting.
 
-## Step 5: Write the checkin
+### Write the checkin
 
 ```bash
 PROJECT=$(pwd)
@@ -106,13 +112,13 @@ ccc orchestrator inbox send \
   --body "Picked up handoff. Topic set to \"$WORKER_TOPIC\". Ready to start."
 ```
 
-## Step 6: Mark the handoff read
+### Mark the handoff read
 
 ```bash
 ccc orchestrator inbox mark-read --orchestrator "$ORCH_NAME" --to "$ROLE" --up-to "$HANDOFF_ID"
 ```
 
-## Step 7: Summarize and hand control back to the user
+### Summarize and hand control back
 
 Print a tight summary:
 
@@ -127,6 +133,78 @@ Then:
 > Checkin is in the orchestrator's inbox. When you're ready to start the work, say "go" (or describe how you'd like to proceed) and I'll dive in.
 
 Do **not** start executing the task in this turn. The user will tell you when to begin.
+
+## Step 3b: Reconnect (resume after /clear)
+
+This branch fires when the role has prior outbound history but no unread inbound handoff. The orchestrator already knows about us; we just need to re-establish local session state and load enough recent history to continue.
+
+### Set the session topic (idempotent)
+
+Determine the topic to set:
+
+1. Look at all prior handoffs to this role: `ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --kind handoff --json`. If any have a non-empty `topic`, use the most recent one's `topic`.
+2. Otherwise fall back to `$ROLE`.
+
+```bash
+SESSION_ID="${CCC_SESSION_ID:-$(cat ~/.claude/session-topics/pid-$PPID.map 2>/dev/null)}"
+if [ -z "$SESSION_ID" ]; then
+  echo "Could not resolve session ID — /orchestrate needs a Claude session"
+  exit 1
+fi
+WORKER_TOPIC="${HANDOFF_TOPIC:-$ROLE}"
+CURRENT_TOPIC=$(cat ~/.claude/session-topics/${SESSION_ID}.txt 2>/dev/null || echo "")
+if [ "$CURRENT_TOPIC" != "$WORKER_TOPIC" ]; then
+  printf '%s' "$WORKER_TOPIC" > ~/.claude/session-topics/${SESSION_ID}.txt
+fi
+```
+
+If `$CURRENT_TOPIC` is already correct, no write is needed. If a *different* topic is set, ask before overwriting.
+
+### Show the recap
+
+Fetch the last 5 messages of interaction between this role and the orchestrator:
+
+```bash
+ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --to "$ROLE" --json
+ccc orchestrator inbox list --orchestrator "$ORCH_NAME" --from "$ROLE" --json
+```
+
+Merge the two arrays, sort by `id` ascending, take the last 5. Render each as a tight block (same format as `/check-messages`):
+
+```
+─── #<id>  <kind>  <from> → <to>  at <ts> ───
+  <body>
+```
+
+If there are no messages at all (shouldn't happen in reconnect mode but guard anyway), say so.
+
+### Do NOT send a reconnect checkin
+
+The orchestrator already has full thread state from the original intake — a "reconnected" checkin would just be noise. If the user wants to ping the orchestrator, they can run `/ask-orchestrator` after reconnecting.
+
+### Do NOT mark anything new as read
+
+There's nothing unread to mark. Skip the `mark-read` step entirely.
+
+### Summarize and hand control back
+
+Print a tight summary:
+
+- **Mode:** Reconnect
+- **Orchestrator:** `<orch>`
+- **Role:** `<role>`
+- **Topic set:** `<worker-topic>` (or "unchanged" if it was already correct)
+- **Recap:** last 5 messages shown above.
+
+Then:
+
+> Reconnected to `<orch>:<role>`. Topic restored, recent history loaded. Suggested next actions:
+>
+> - `/check-messages` — verify nothing is waiting for you
+> - `/ask-orchestrator` — send a status update or question
+> - Tell me what you want to work on (continue the task, run `/ralph-review`, etc.)
+
+Do **not** start executing anything in this turn. Wait for the user.
 
 ## Notes
 
