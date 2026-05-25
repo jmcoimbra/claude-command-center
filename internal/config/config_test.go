@@ -7,6 +7,39 @@ import (
 	"time"
 )
 
+func TestSlackConfig_EffectiveToken(t *testing.T) {
+	// Save and restore env to avoid bleeding into other tests.
+	t.Setenv("SLACK_TOKEN", "")
+	t.Setenv("SLACK_BOT_TOKEN", "")
+
+	cases := []struct {
+		name        string
+		cfg         SlackConfig
+		envToken    string
+		envBotToken string
+		want        string
+	}{
+		{"all empty", SlackConfig{}, "", "", ""},
+		{"config Token wins", SlackConfig{Token: "xoxc-cfg"}, "xoxp-env", "xoxb-env", "xoxc-cfg"},
+		{"config BotToken when Token empty", SlackConfig{BotToken: "xoxb-deprecated"}, "xoxp-env", "xoxb-env", "xoxb-deprecated"},
+		{"env SLACK_TOKEN fallback", SlackConfig{}, "xoxp-from-env", "xoxb-env", "xoxp-from-env"},
+		{"env SLACK_BOT_TOKEN last resort", SlackConfig{}, "", "xoxb-from-env", "xoxb-from-env"},
+		{"trim whitespace from config", SlackConfig{Token: "  xoxc-padded  "}, "", "", "xoxc-padded"},
+		{"trim whitespace from env", SlackConfig{}, "", "  xoxb-padded  ", "xoxb-padded"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SLACK_TOKEN", tc.envToken)
+			t.Setenv("SLACK_BOT_TOKEN", tc.envBotToken)
+			got := tc.cfg.EffectiveToken()
+			if got != tc.want {
+				t.Errorf("EffectiveToken() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
@@ -105,8 +138,8 @@ func TestSaveAndLoad(t *testing.T) {
 
 func TestGetPalette(t *testing.T) {
 	names := PaletteNames()
-	if len(names) != 5 {
-		t.Fatalf("expected 5 palettes, got %d", len(names))
+	if len(names) != 6 {
+		t.Fatalf("expected 6 palettes, got %d", len(names))
 	}
 
 	for _, name := range names {

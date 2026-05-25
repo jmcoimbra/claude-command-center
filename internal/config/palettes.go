@@ -54,6 +54,13 @@ var palettes = map[string]Palette{
 		Green: "#c0c0c0", GradStart: "#a0a0a0", GradMid: "#c0c0c0",
 		GradEnd: "#e0e0e0", BgDark: "#1a1a1a",
 	},
+	"light": {
+		Fg: "#1a1410", Highlight: "#b94d10", SelectedBg: "#f0e0c8",
+		Pointer: "#c95a10", Muted: "#807070", Cyan: "#0a6080",
+		Yellow: "#a07010", White: "#000000", Purple: "#6a3a70",
+		Green: "#506a20", GradStart: "#c95a10", GradMid: "#a04060",
+		GradEnd: "#6a3a70", BgDark: "#f8f0e8",
+	},
 }
 
 // GetPalette returns the named palette. If the name is "custom" and custom
@@ -77,5 +84,5 @@ func GetPalette(name string, custom *CustomColors) Palette {
 
 // PaletteNames returns the names of all built-in palettes.
 func PaletteNames() []string {
-	return []string{"aurora", "ocean", "ember", "neon", "mono"}
+	return []string{"aurora", "ocean", "ember", "neon", "mono", "light"}
 }
