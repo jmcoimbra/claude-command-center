@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -163,13 +164,25 @@ type SlackConfig struct {
 	BotToken string `yaml:"bot_token,omitempty"` // deprecated: use Token; kept for backwards compat
 }
 
-// EffectiveToken returns the active Slack token, preferring Token over the
-// deprecated BotToken field.
+// EffectiveToken returns the active Slack token. Resolution order:
+//  1. config Token field (set via Settings UI or written to config.yaml)
+//  2. deprecated BotToken field (back-compat with older configs)
+//  3. SLACK_TOKEN env var (matches onboarding validate.go order)
+//  4. SLACK_BOT_TOKEN env var
+//
+// The env fallback lets users keep the token out of config.yaml entirely and
+// source it from Keychain, 1Password CLI, direnv, etc. via their shell rc.
 func (c SlackConfig) EffectiveToken() string {
-	if c.Token != "" {
-		return c.Token
+	if tok := strings.TrimSpace(c.Token); tok != "" {
+		return tok
 	}
-	return c.BotToken
+	if tok := strings.TrimSpace(c.BotToken); tok != "" {
+		return tok
+	}
+	if tok := strings.TrimSpace(os.Getenv("SLACK_TOKEN")); tok != "" {
+		return tok
+	}
+	return strings.TrimSpace(os.Getenv("SLACK_BOT_TOKEN"))
 }
 
 type GmailConfig struct {
