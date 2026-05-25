@@ -80,7 +80,7 @@ var ghSearchPRs = func(ctx context.Context, args []string) ([]byte, error) {
 var ghPRView = func(ctx context.Context, repo string, number int) ([]byte, error) {
 	args := []string{"pr", "view", fmt.Sprintf("%d", number), "-R", repo,
 		"--json", "reviews,reviewRequests,statusCheckRollup,reviewDecision,comments,latestReviews,headRefOid"}
-	cmd := exec.CommandContext(ctx, "gh", args...)
+	cmd := ghCommand(ctx, args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {

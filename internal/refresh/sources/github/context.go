@@ -1,8 +1,8 @@
 package github
 
 import (
+	"context"
 	"fmt"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -18,11 +18,12 @@ func NewContextFetcher() *ContextFetcherImpl {
 func (f *ContextFetcherImpl) ContextTTL() time.Duration { return 24 * time.Hour }
 
 func (f *ContextFetcherImpl) FetchContext(sourceRef string) (string, error) {
-	out, err := exec.Command("gh", "pr", "view", sourceRef, "--json",
+	ctx := context.Background()
+	out, err := ghCommand(ctx, "pr", "view", sourceRef, "--json",
 		"title,body,comments,reviews", "--jq",
 		`"# " + .title + "\n\n" + .body + "\n\n## Comments\n" + ([.comments[] | "**" + .author.login + ":** " + .body] | join("\n\n")) + "\n\n## Reviews\n" + ([.reviews[] | "**" + .author.login + " (" + .state + "):** " + .body] | join("\n\n"))`).Output()
 	if err != nil {
-		out, err = exec.Command("gh", "issue", "view", sourceRef, "--json",
+		out, err = ghCommand(ctx, "issue", "view", sourceRef, "--json",
 			"title,body,comments", "--jq",
 			`"# " + .title + "\n\n" + .body + "\n\n## Comments\n" + ([.comments[] | "**" + .author.login + ":** " + .body] | join("\n\n"))`).Output()
 		if err != nil {

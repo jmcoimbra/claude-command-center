@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -379,7 +380,7 @@ type ghUserFetchResult struct {
 
 // fetchGHUsername is a variable for testability.
 var fetchGHUsername = func() (string, error) {
-	out, err := exec.Command("gh", "api", "/user").Output()
+	out, err := ghCommand(context.Background(), "api", "/user").Output()
 	if err != nil {
 		return "", err
 	}
@@ -402,7 +403,7 @@ func fetchGHRepoList(owner string) ([]ghRepoInfo, error) {
 		args = append(args, owner)
 	}
 	args = append(args, "--json", "nameWithOwner,description", "--limit", "200")
-	cmd := exec.Command("gh", args...)
+	cmd := ghCommand(context.Background(), args...)
 	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
@@ -419,7 +420,7 @@ func fetchGHRepoList(owner string) ([]ghRepoInfo, error) {
 
 // fetchGHOrgs returns the login names of orgs the authenticated user belongs to.
 func fetchGHOrgs() ([]string, error) {
-	cmd := exec.Command("gh", "api", "user/orgs", "--jq", ".[].login")
+	cmd := ghCommand(context.Background(), "api", "user/orgs", "--jq", ".[].login")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -480,7 +481,7 @@ func (s *Settings) SettingsOpenCmd() tea.Cmd {
 		return nil
 	}
 	// Quick check: is gh authenticated?
-	if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+	if err := ghCommand(context.Background(), "auth", "token").Run(); err != nil {
 		s.logError("gh CLI not authenticated, skipping username auto-fetch")
 		return nil
 	}
@@ -534,7 +535,7 @@ func (s *Settings) HandleSettingsMsg(msg tea.Msg) (bool, plugin.Action) {
 func (s *Settings) DoctorChecks(opts plugin.DoctorOpts) []plugin.DoctorCheck {
 	check := plugin.DoctorCheck{Name: "GitHub CLI"}
 
-	cmd := exec.Command("gh", "auth", "token")
+	cmd := ghCommand(context.Background(), "auth", "token")
 	if err := cmd.Run(); err != nil {
 		check.Result = plugin.ValidationResult{
 			Status:  "missing",
@@ -633,7 +634,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 		var cmds []tea.Cmd
 		// Re-fetch username if empty and gh is authenticated.
 		if s.cfg.GitHub.Username == "" {
-			if err := exec.Command("gh", "auth", "token").Run(); err == nil {
+			if err := ghCommand(context.Background(), "auth", "token").Run(); err == nil {
 				s.logInfo("refreshing: fetching username")
 				cmds = append(cmds, func() tea.Msg {
 					login, err := fetchGHUsername()
@@ -664,7 +665,7 @@ func (s *Settings) HandleSettingsKey(msg tea.KeyMsg) plugin.Action {
 			return plugin.NoopAction()
 		}
 		// Trigger a fresh fetch
-		if err := exec.Command("gh", "auth", "token").Run(); err != nil {
+		if err := ghCommand(context.Background(), "auth", "token").Run(); err != nil {
 			s.logError("repo fetch aborted: gh CLI not authenticated")
 			return plugin.Action{Type: plugin.ActionFlash, Payload: "GitHub CLI not authenticated"}
 		}

@@ -68,6 +68,20 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestFetchReturnsEmptyResult(t *testing.T) {
+	// Mock the gh-backed helpers so the test does not depend on the local
+	// gh CLI being authenticated or on the live network.
+	origSearch := ghSearchPRs
+	ghSearchPRs = func(ctx context.Context, args []string) ([]byte, error) {
+		return []byte("[]"), nil
+	}
+	defer func() { ghSearchPRs = origSearch }()
+
+	origPRView := ghPRView
+	ghPRView = func(ctx context.Context, repo string, number int) ([]byte, error) {
+		return []byte("{}"), nil
+	}
+	defer func() { ghPRView = origPRView }()
+
 	src := New(true, []string{"owner/repo"}, "user", true)
 	result, err := src.Fetch(context.Background())
 	if err != nil {
