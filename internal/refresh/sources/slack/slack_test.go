@@ -21,11 +21,76 @@ func TestHasCommitmentLanguage(t *testing.T) {
 		{"I promise to send the report", true},
 		{"I promised to follow up", true},
 	}
+	// Use the source's default first-person phrases (no third-person, since no name).
+	phrases := firstPersonCommitmentPhrases
 	for _, tt := range tests {
-		got := hasCommitmentLanguage(tt.text)
+		got := hasCommitmentLanguage(tt.text, phrases)
 		if got != tt.want {
 			t.Errorf("hasCommitmentLanguage(%q) = %v, want %v", tt.text, got, tt.want)
 		}
+	}
+}
+
+func TestSlackSource_commitmentPhrases_thirdPersonInclusion(t *testing.T) {
+	src := New(true, "", "juliano", nil, nil)
+	phrases := src.commitmentPhrases()
+
+	wantSubstrings := []string{"juliano will", "juliano is going to", "juliano to follow", "juliano needs to"}
+	for _, want := range wantSubstrings {
+		found := false
+		for _, p := range phrases {
+			if p == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected phrase %q in commitmentPhrases, got %v", want, phrases)
+		}
+	}
+
+	// Sanity: no leftover "aaron" from before refactor.
+	for _, p := range phrases {
+		if p == "aaron will" || p == "aaron is going to" {
+			t.Errorf("found legacy 'aaron' phrase in generalized output: %q", p)
+		}
+	}
+}
+
+func TestSlackSource_commitmentPhrases_emptyNameSkipsThirdPerson(t *testing.T) {
+	src := New(true, "", "", nil, nil)
+	phrases := src.commitmentPhrases()
+
+	if len(phrases) != len(firstPersonCommitmentPhrases) {
+		t.Errorf("empty name should yield only first-person phrases: got %d, want %d", len(phrases), len(firstPersonCommitmentPhrases))
+	}
+}
+
+func TestSlackSource_searchQueries_emptyNameSkipsThirdPerson(t *testing.T) {
+	withName := New(true, "", "juliano", nil, nil)
+	withoutName := New(true, "", "", nil, nil)
+
+	gotWith := len(withName.searchQueries())
+	gotWithout := len(withoutName.searchQueries())
+	if gotWith <= gotWithout {
+		t.Errorf("setting a name should add third-person queries: with=%d without=%d", gotWith, gotWithout)
+	}
+}
+
+func TestSlackSource_searchQueries_includesNameWhenSet(t *testing.T) {
+	src := New(true, "", "juliano", nil, nil)
+	queries := src.searchQueries()
+
+	wantOne := "juliano will"
+	found := false
+	for _, q := range queries {
+		if q == wantOne {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected %q in searchQueries, got %v", wantOne, queries)
 	}
 }
 
