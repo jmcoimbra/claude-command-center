@@ -1,6 +1,7 @@
 ---
 name: orchestrator
 description: Start or resume an orchestrator session — a Claude session whose only job is to coordinate multiple parallel working sessions, hold cross-cutting decisions, and help decide where to focus next. Use when starting an orchestrator, not from a working session.
+user_invocable: true
 ---
 
 # Orchestrator

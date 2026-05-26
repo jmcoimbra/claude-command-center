@@ -1,6 +1,7 @@
 ---
 name: ask-orchestrator
 description: From a worker session, send a message (question, status update, or freeform note) to the orchestrator coordinating this work. Writes directly to the orchestrator's inbox — no clipboard handoff. Use when stuck on a decision, when status changes, or when the orchestrator should know something.
+user_invocable: true
 ---
 
 # Ask Orchestrator
