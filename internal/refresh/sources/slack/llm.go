@@ -12,7 +12,7 @@ import (
 	"github.com/anutron/claude-command-center/internal/refresh"
 )
 
-func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackCandidate) ([]db.Todo, error) {
+func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackCandidate, userFirstName string) ([]db.Todo, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
@@ -34,44 +34,60 @@ func extractSlackCommitments(ctx context.Context, l llm.LLM, candidates []slackC
 		sb.WriteString("\n---\n\n")
 	}
 
-	prompt := fmt.Sprintf(`You are filtering Slack messages for real commitments involving the user (Aaron). The bar is VERY high.
+	// userFirstName is the operator's name; capitalize for the prompt body so it
+	// reads naturally. Empty name means we use a generic "the user" framing.
+	nameTitle := strings.Title(userFirstName)
+	if nameTitle == "" {
+		nameTitle = "the user"
+	}
+	nameOrTheUser := nameTitle
+	if nameTitle != "the user" {
+		nameOrTheUser = nameTitle
+	}
+
+	prompt := fmt.Sprintf(`You are filtering Slack messages for real commitments involving the user (%s). The bar is VERY high.
 
 A message is a todo if EITHER:
 A) The user explicitly committed to a specific deliverable (not just participating in conversation)
-B) Someone else assigned work to the user — e.g., "Aaron will...", "Bob and Aaron will follow-up on...",
-   "Aaron is going to...", "Aaron to handle...", "[Name] and Aaron will..."
-   These are commitments made ON BEHALF of the user that he needs to be aware of.
+B) Someone else assigned work to the user. e.g., "%s will...", "Bob and %s will follow-up on...",
+   "%s is going to...", "%s to handle...", "[Name] and %s will..."
+   These are commitments made ON BEHALF of the user that they need to be aware of.
 
 In both cases:
 1. There must be a concrete next action with a clear outcome
 2. You can write an actionable title starting with a verb (Send, Review, Schedule, Build, Write, Follow up, etc.)
 
 Each message has an Author field showing who wrote it. Use this to determine attribution:
-- If the Author is NOT Aaron and the message uses first-person ("I will", "I'll"), that is the OTHER person's commitment, not Aaron's — REJECT it
-- If the Author is NOT Aaron but the message assigns work to Aaron ("Aaron will...", "Aaron to..."), that IS a todo for Aaron
+- If the Author is NOT %s and the message uses first-person ("I will", "I'll"), that is the OTHER person's commitment, not %s's. REJECT it.
+- If the Author is NOT %s but the message assigns work to %s ("%s will...", "%s to..."), that IS a todo for %s.
 
 REJECT messages that are:
-- First-person commitments by someone other than Aaron (check the Author field!)
+- First-person commitments by someone other than %s (check the Author field!)
 - Conversational responses ("done", "good process!", "sounds good")
 - Observations, tips, shared links, compliments
 - Descriptions of past actions ("I just...", "I found that...")
 - Vague intentions without a specific deliverable
-- Assignments to OTHER people that don't include Aaron
+- Assignments to OTHER people that don't include %s
 
-Use the preceding conversation and thread context to understand WHAT was committed to. Messages often use pronouns like "this", "it", "that" — resolve them using the surrounding conversation. Build the todo title from the full context, not just the short message.
+Use the preceding conversation and thread context to understand WHAT was committed to. Messages often use pronouns like "this", "it", "that". Resolve them using the surrounding conversation. Build the todo title from the full context, not just the short message.
 
 For each real commitment, return:
 - title: Actionable title starting with a verb (20+ chars)
 - source_ref: The permalink
 - context: Channel name and what area this relates to
-- detail: Full context — who was in the conversation, what was discussed, what's expected
+- detail: Full context: who was in the conversation, what was discussed, what's expected
 - who_waiting: Person(s) waiting on this
 - due: YYYY-MM-DD if mentioned, empty string if not
 
 Return ONLY a JSON array. Return [] if no real commitments found. Expect 0-3 results from these %d candidates.
 
 Messages:
-%s`, len(candidates), sb.String())
+%s`,
+		nameOrTheUser,                                                                 // header
+		nameTitle, nameTitle, nameTitle, nameTitle, nameTitle,                         // B examples (5)
+		nameTitle, nameTitle, nameTitle, nameTitle, nameTitle, nameTitle, nameTitle,   // Author attribution block (7)
+		nameTitle, nameTitle,                                                          // reject block (2)
+		len(candidates), sb.String())
 
 	log.Printf("slack: sending %d candidates to LLM for extraction", len(candidates))
 	for i, c := range candidates {

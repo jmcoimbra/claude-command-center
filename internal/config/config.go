@@ -12,14 +12,21 @@ import (
 )
 
 type Config struct {
-	Name            string        `yaml:"name"`
-	HomeDir         string        `yaml:"home_dir,omitempty"`
-	Subtitle        string        `yaml:"subtitle,omitempty"`
-	ShowBanner      *bool         `yaml:"show_banner,omitempty"`
-	BannerTopPadding *int        `yaml:"banner_top_padding,omitempty"`
-	Palette         string        `yaml:"palette"`
-	Colors          *CustomColors `yaml:"colors,omitempty"`
-	RefreshInterval string        `yaml:"refresh_interval,omitempty"`
+	Name             string        `yaml:"name"`
+	HomeDir          string        `yaml:"home_dir,omitempty"`
+	Subtitle         string        `yaml:"subtitle,omitempty"`
+	ShowBanner       *bool         `yaml:"show_banner,omitempty"`
+	BannerTopPadding *int          `yaml:"banner_top_padding,omitempty"`
+	Palette          string        `yaml:"palette"`
+	Colors           *CustomColors `yaml:"colors,omitempty"`
+	RefreshInterval  string        `yaml:"refresh_interval,omitempty"`
+
+	// UserFirstName is the operator's first name. Used by the Slack source to
+	// generate third-person commitment phrases ("<name> will", "<name> is going
+	// to", etc.) and to tell the commitment-extraction LLM whose commitments to
+	// surface. Defaults to empty, which limits the Slack source to first-person
+	// commitment detection only (still works; just narrower coverage).
+	UserFirstName string `yaml:"user_first_name,omitempty"`
 
 	Calendar        CalendarConfig         `yaml:"calendar"`
 	GitHub          GitHubConfig           `yaml:"github"`

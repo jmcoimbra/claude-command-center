@@ -20,15 +20,24 @@ import (
 
 // SlackSource fetches Slack messages with commitment language and uses LLM to extract todos.
 type SlackSource struct {
-	enabled  bool
-	botToken string
-	LLM      llm.LLM
-	DB       *sql.DB
+	enabled       bool
+	botToken      string
+	userFirstName string // lowercase; empty means third-person scanning is skipped
+	LLM           llm.LLM
+	DB            *sql.DB
 }
 
-// New creates a SlackSource with the given token and LLM.
-func New(enabled bool, botToken string, l llm.LLM, database *sql.DB) *SlackSource {
-	return &SlackSource{enabled: enabled, botToken: botToken, LLM: l, DB: database}
+// New creates a SlackSource with the given token, user first name, and LLM.
+// userFirstName is normalized (lowercased + trimmed). Empty value disables
+// third-person commitment detection ("<name> will...", "<name> is going to...").
+func New(enabled bool, botToken string, userFirstName string, l llm.LLM, database *sql.DB) *SlackSource {
+	return &SlackSource{
+		enabled:       enabled,
+		botToken:      botToken,
+		userFirstName: strings.ToLower(strings.TrimSpace(userFirstName)),
+		LLM:           l,
+		DB:            database,
+	}
 }
 
 func (s *SlackSource) Name() string  { return "slack" }
@@ -40,7 +49,9 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 		return nil, fmt.Errorf("slack auth: bot token not configured")
 	}
 
-	candidates, err := fetchSlackCandidates(ctx, token)
+	phrases := s.commitmentPhrases()
+	queries := s.searchQueries()
+	candidates, err := fetchSlackCandidates(ctx, token, queries, phrases)
 	if err != nil {
 		return nil, fmt.Errorf("fetch failed: %w", err)
 	}
@@ -80,7 +91,7 @@ func (s *SlackSource) Fetch(ctx context.Context) (*refresh.SourceResult, error) 
 	// Extract commitments via LLM only for new candidates
 	var todos []db.Todo
 	if len(newCandidates) > 0 && s.LLM != nil {
-		todos, err = extractSlackCommitments(ctx, s.LLM, newCandidates)
+		todos, err = extractSlackCommitments(ctx, s.LLM, newCandidates, s.userFirstName)
 		if err != nil {
 			log.Printf("slack: LLM extraction failed: %v", err)
 			return &refresh.SourceResult{
@@ -107,8 +118,8 @@ type slackCandidate struct {
 	ConversationContext string // preceding messages in the same channel for pronoun resolution
 }
 
-var commitmentPhrases = []string{
-	// First-person commitments (Aaron's own messages)
+// firstPersonCommitmentPhrases are name-independent phrases. Apply to every operator.
+var firstPersonCommitmentPhrases = []string{
 	"i'll", "i will", "i need to", "let me", "i'm going to",
 	"action item", "i committed", "i promise", "follow up",
 	"send you", "set up", "schedule", "i can do", "i'll take",
@@ -116,11 +127,47 @@ var commitmentPhrases = []string{
 	"i'll check", "i'll follow", "i'll set", "i'll make",
 	"i'll write", "i'll review", "i'll update", "i'll fix",
 	"i'll create", "i'll put", "i'll share", "i'll reach out",
-	// Third-person assignments (others assigning work to Aaron)
-	"aaron will", "aaron is going to", "aaron to follow",
-	"aaron to handle", "aaron can", "aaron should",
-	"and aaron will", "aaron needs to", "aaron to send",
-	"aaron to review", "aaron to set up", "aaron to schedule",
+}
+
+// thirdPersonCommitmentTemplates produce phrases when joined with the user's
+// first name. e.g. "<name> will", "<name> is going to". Empty userFirstName
+// means we skip these (only first-person scanning).
+var thirdPersonCommitmentTemplates = []string{
+	"%s will", "%s is going to", "%s to follow",
+	"%s to handle", "%s can", "%s should",
+	"and %s will", "%s needs to", "%s to send",
+	"%s to review", "%s to set up", "%s to schedule",
+}
+
+// commitmentPhrases returns the full phrase set for this source (first-person
+// plus third-person if userFirstName is set).
+func (s *SlackSource) commitmentPhrases() []string {
+	if s.userFirstName == "" {
+		return firstPersonCommitmentPhrases
+	}
+	out := make([]string, 0, len(firstPersonCommitmentPhrases)+len(thirdPersonCommitmentTemplates))
+	out = append(out, firstPersonCommitmentPhrases...)
+	for _, tmpl := range thirdPersonCommitmentTemplates {
+		out = append(out, fmt.Sprintf(tmpl, s.userFirstName))
+	}
+	return out
+}
+
+// searchQueries returns the queries used by the search.messages fallback path.
+// Drops the third-person queries when userFirstName is empty.
+func (s *SlackSource) searchQueries() []string {
+	base := []string{
+		"i'll", "i will", "i promise", "action item", "follow up", "let me",
+	}
+	if s.userFirstName == "" {
+		return base
+	}
+	n := s.userFirstName
+	return append(base,
+		n+" will",
+		n+" is going to",
+		n+" to follow",
+	)
 }
 
 // API response types for bot-compatible endpoints.
@@ -398,7 +445,7 @@ func (r *userNameResolver) resolve(userID string) string {
 	return name
 }
 
-func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, error) {
+func fetchSlackCandidates(ctx context.Context, token string, searchQueries []string, phrases []string) ([]slackCandidate, error) {
 	// Get the authenticated user's identity for labeling self-DMs
 	selfUserID, selfUserName, authErr := fetchAuthIdentity(ctx, token)
 	if authErr != nil {
@@ -415,7 +462,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 	if err != nil {
 		if isMissingScopeError(err) {
 			log.Printf("slack: conversations.list missing scope, falling back to search.messages")
-			return fetchSlackCandidatesViaSearch(ctx, token)
+			return fetchSlackCandidatesViaSearch(ctx, token, searchQueries, phrases)
 		}
 		return nil, fmt.Errorf("listing channels: %w", err)
 	}
@@ -466,7 +513,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 			if isMissingScopeError(err) {
 				log.Printf("slack: conversations.history missing scope for %s (%s), falling back to search.messages",
 					displayName, ch.ID)
-				return fetchSlackCandidatesViaSearch(ctx, token)
+				return fetchSlackCandidatesViaSearch(ctx, token, searchQueries, phrases)
 			}
 			// Log individual channel errors instead of silently skipping
 			log.Printf("slack: error fetching history for %s (%s): %v", displayName, ch.ID, err)
@@ -478,7 +525,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 			if msg.Type != "message" || msg.Text == "" {
 				continue
 			}
-			if !hasCommitmentLanguage(msg.Text) {
+			if !hasCommitmentLanguage(msg.Text, phrases) {
 				continue
 			}
 			commitmentCount++
@@ -517,7 +564,7 @@ func fetchSlackCandidates(ctx context.Context, token string) ([]slackCandidate, 
 
 	// Also run search.messages to pick up DM/group-DM candidates that aren't
 	// covered by the channel-only fetch above.
-	searchCandidates, searchErr := fetchSlackCandidatesViaSearch(ctx, token)
+	searchCandidates, searchErr := fetchSlackCandidatesViaSearch(ctx, token, searchQueries, phrases)
 	if searchErr != nil {
 		log.Printf("slack: search.messages fallback failed (non-fatal): %v", searchErr)
 	} else if len(searchCandidates) > 0 {
@@ -564,25 +611,11 @@ type slackSearchMatch struct {
 
 // fetchSlackCandidatesViaSearch uses the search.messages API (requires only search:read scope)
 // to find commitment-language messages. This is the fallback when conversations.list is unavailable.
-func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCandidate, error) {
+// searchQueries drives the API calls (one per query); phrases is the filter applied to results.
+func fetchSlackCandidatesViaSearch(ctx context.Context, token string, searchQueries, phrases []string) ([]slackCandidate, error) {
 	log.Printf("slack: using search.messages fallback path")
 
 	var allCandidates []slackCandidate
-
-	// Search for commitment phrases in batches — Slack search supports basic query strings
-	// We group related phrases to minimize API calls
-	searchQueries := []string{
-		"i'll",
-		"i will",
-		"i promise",
-		"action item",
-		"follow up",
-		"let me",
-		// Third-person assignments to Aaron
-		"aaron will",
-		"aaron is going to",
-		"aaron to follow",
-	}
 
 	seen := make(map[string]bool)
 	for _, query := range searchQueries {
@@ -612,7 +645,7 @@ func fetchSlackCandidatesViaSearch(ctx context.Context, token string) ([]slackCa
 			}
 			seen[key] = true
 
-			if !hasCommitmentLanguage(match.Text) {
+			if !hasCommitmentLanguage(match.Text, phrases) {
 				continue
 			}
 			matchCount++
@@ -717,9 +750,9 @@ func slackTSDay(ts string) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-func hasCommitmentLanguage(text string) bool {
+func hasCommitmentLanguage(text string, phrases []string) bool {
 	lower := strings.ToLower(text)
-	for _, phrase := range commitmentPhrases {
+	for _, phrase := range phrases {
 		if strings.Contains(lower, phrase) {
 			return true
 		}
